@@ -60,7 +60,7 @@ usse::DataType CompilerGXP::translateType(const SPIRType &type) {
 
     dataType.type = translateType(type.basetype);
     dataType.components = type.vecsize;
-    dataType.arraySize = type.array.size();
+    dataType.arraySize = type.columns;
 
     return dataType;
 }
@@ -124,16 +124,21 @@ void CompilerGXP::createShaderResources() {
         gxp::Parameter parameter;
         parameter.name = input.name;
         parameter.category = gxp::ParameterCategory::Attribute;
-        parameter.type.type = translateType(type.basetype);
-        parameter.type.arraySize = 1;
-        parameter.type.components = type.vecsize;
+        parameter.type = translateType(type);
         idRegisters[input.id] = builder.registerParameter(parameter);
     }
 
     for (const auto &uniform : resources.uniform_buffers) {
         const SPIRType &type = get_type(uniform.type_id);
 
-        // Fill In
+        if (type.member_types.size() != 1)
+            throw std::runtime_error("Uniform blocks are not supported.");
+
+        gxp::Parameter parameter;
+        parameter.name = uniform.name;
+        parameter.category = gxp::ParameterCategory::Uniform;
+        parameter.type = translateType(get_type(type.member_types[0]));
+        idRegisters[uniform.id] = builder.registerParameter(parameter);
     }
 
     std::vector<gxp::ProgramVarying> varyings;
@@ -142,7 +147,7 @@ void CompilerGXP::createShaderResources() {
     std::vector<gxp::ProgramVarying> availableVaryings = allVaryings;
     std::vector<gxp::ProgramVarying> availableTexCoords = allTexCoords;
 
-    const auto &allocate_varying = [&availableVaryings, &availableTexCoords](uint32_t size) {
+    const auto &allocateVarying = [&availableVaryings, &availableTexCoords](uint32_t size) {
         gxp::ProgramVarying selected = gxp::ProgramVarying::None;
 
         if (size == 4 && !availableVaryings.empty()) {
@@ -160,9 +165,9 @@ void CompilerGXP::createShaderResources() {
         const SPIRVariable &variable = get<SPIRVariable>(output.id);
         const SPIRType &type = get_type(output.type_id);
 
-        gxp::ProgramVarying varying = allocate_varying(type.vecsize);
+        gxp::ProgramVarying varying = allocateVarying(type.vecsize);
         if (varying == gxp::ProgramVarying::None)
-            throw std::runtime_error("No availible space for varying.");
+            throw std::runtime_error("No available space for varying.");
 
         if (gxp::isTexCoordVarying(varying)) {
             gxp::ProgramTexCoordInfo info = { };

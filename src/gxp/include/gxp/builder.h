@@ -24,8 +24,16 @@ namespace gxp {
         Builder &parent;
 
         void createNop();
-        void createMov(usse::RegisterReference source, usse::RegisterReference destination);
-        void createPack(usse::RegisterReference source, usse::RegisterReference destination);
+        void createMov(
+            usse::RegisterReference source,
+            usse::RegisterReference destination);
+        void createPack(
+            usse::RegisterReference source,
+            usse::RegisterReference destination);
+        void createDot(
+            usse::RegisterReference first,
+            usse::RegisterReference second,
+            usse::RegisterReference destination);
     };
 
     class Parameter {
@@ -50,6 +58,8 @@ namespace gxp {
         uint32_t paRegPointer = 0;
         uint32_t saRegPointer = 0;
         uint32_t oRegPointer = 0;
+        uint32_t tRegPointer = 0;
+        uint32_t iRegPointer = 0;
 
         std::vector<Block> primaryBlocks;
         std::vector<Block> secondaryBlocks;
@@ -61,6 +71,7 @@ namespace gxp {
         Block *createSecondaryBlock();
 
         usse::RegisterReference allocateRegister(usse::RegisterBank bank, usse::DataType type);
+        void freeRegister(usse::RegisterReference reg);
 
         usse::RegisterReference registerParameter(const Parameter &parameter);
         std::unordered_map<ProgramVarying, usse::RegisterReference> registerVaryings(

@@ -20,15 +20,6 @@ namespace gxp {
         std::vector<MovRegisterData> data;
 
         uint32_t destMask = destination.getSwizzleMask();
-//        usse::SwizzleVec4 swizzleDescription = usse::getSwizzleVec4DontCare();
-//        uint32_t swizzleIndex = 0;
-//        for (uint32_t a = 0; a < 4; a++) {
-//            if (destMask & (1u << a)) {
-//                if (swizzleIndex >= source.swizzle.size())
-//                    throw std::runtime_error("Swizzle out of bounds.");
-//                swizzleDescription[a] = source.swizzle[swizzleIndex++];
-//            }
-//        }
 
         for (uint32_t a = 0; a < 2; a++) {
             uint8_t mask = (destMask & (0b11u << (a * 2))) >> (a * 2);
@@ -142,16 +133,16 @@ namespace gxp {
                 srcBankLayout.number, // src1_bank_sel
                 0, // src2_bank_sel
                 mov.destMask, // dest_mask
-                mov.destination.index / (destBankLayout.needsDiv() ? 2 : 1), // dest_n
+                destBankLayout.getIndex(mov.destination), // dest_n
                 0, // src0_n
-                mov.source.index / (srcBankLayout.needsDiv() ? 2 : 1), // src1_n
+                srcBankLayout.getIndex(mov.source), // src1_n
                 0 // src2_n
             ));
         }
     }
 
     void Block::createPack(usse::RegisterReference source, usse::RegisterReference destination) {
-        usse::BankLayout srcBankLayout = usse::BankLayout::destLayout(source.bank);
+        usse::BankLayout srcBankLayout = usse::BankLayout::srcLayout(source.bank);
         usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
 
         if (destination.type.type == usse::Type::Signed32 || destination.type.type == usse::Type::Unsigned32
@@ -188,15 +179,54 @@ namespace gxp {
             destBankLayout.number, // dest_bank_sel
             srcBankLayout.number, // src1_bank_sel
             srcBankLayout.number, // src2_bank_sel
-            destination.index, // dest_n
+            destBankLayout.getIndex(destination), // dest_n
             static_cast<uint32_t>(destination.swizzle[3]) & 0b11u, // comp_sel_3
-            1, // scale
+            false, // scale
             static_cast<uint32_t>(destination.swizzle[1]) & 0b11u, // comp_sel_1
             static_cast<uint32_t>(destination.swizzle[2]) & 0b11u, // comp_sel_2
-            source.index, // src1_n
+            srcBankLayout.getIndex(source.getHalf(0)), // src1_n
             static_cast<uint32_t>(destination.swizzle[0]) & 0b10u >> 1u, // comp0_sel_bit1
-            source.index + source.size / 2, // src2_n
-            static_cast<uint32_t>(destination.swizzle[3]) & 0b01u // comp_sel_0_bit0
+            srcBankLayout.getIndex(source.getHalf(1)), // src2_n
+            static_cast<uint32_t>(destination.swizzle[0]) & 0b01u // comp_sel_0_bit0
+        ));
+    }
+
+
+    void Block::createDot(
+        usse::RegisterReference first,
+        usse::RegisterReference second,
+        usse::RegisterReference destination) {
+        usse::BankLayout firstBankLayout = usse::BankLayout::srcLayout(first.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        assert(second.bank == usse::RegisterBank::Internal);
+
+        instructions.push_back(usse::makeVDP(
+            0, // pred
+            0, // skipinv
+            0, // clip_plane_enable
+            first.type.components == 4, // opcode2
+            destBankLayout.extension, // dest_use_bank_ext
+            0, // end
+            firstBankLayout.extension, // src1_bank_ext
+            3, /* Seems to be the normal value... */ // increment_mode
+            0, // gpi0_abs
+            0, // repeat_count
+            0, // nosched
+            destination.getSwizzleMask(), // write_mask
+            0, // src1_neg
+            0, // src1_abs
+            0, // clip_plane_n
+            destBankLayout.number, // dest_bank
+            firstBankLayout.number, // src1_bank
+            second.index, // gpi0_n
+            destBankLayout.getIndex(destination), // dest_n
+            second.getSwizzleIndex(), // gpi0_swiz
+            static_cast<usse::Param>(first.swizzle[3]), // src1_swiz_w
+            static_cast<usse::Param>(first.swizzle[2]), // src1_swiz_z
+            static_cast<usse::Param>(first.swizzle[1]), // src1_swiz_y
+            static_cast<usse::Param>(first.swizzle[0]), // src1_swiz_x
+            firstBankLayout.getIndex(first) // src1_n
             ));
     }
 
@@ -229,7 +259,7 @@ namespace gxp {
 
     usse::RegisterReference Builder::allocateRegister(usse::RegisterBank bank, usse::DataType type) {
         uint32_t index = 0;
-        uint32_t size = usse::getTypeSize(type.type) * type.components / 4;
+        uint32_t size = usse::getTypeSize(type.type) * type.components * type.arraySize / 4;
 
         switch (bank) {
         case usse::RegisterBank::Primary:
@@ -244,14 +274,28 @@ namespace gxp {
             index = oRegPointer;
             oRegPointer += size;
             break;
+        case usse::RegisterBank::Temporary:
+            index = tRegPointer;
+            tRegPointer += size;
+            break;
+        case usse::RegisterBank::Internal:
+            index = iRegPointer;
+            iRegPointer += size;
+            break;
         default:
             throw std::runtime_error("Missing allocation method for bank.");
         }
 
-//        fmt::print("Allocating {} registers of type {} (vec{}[{}]), size {} at index {}.\n",
-//            usse::getBankName(bank), usse::getTypeName(type.type), type.components, type.arraySize, reg.size, reg.index);
+        fmt::print("Allocating {} registers of type {} (vec{}[{}]), size {} at index {}.\n",
+            usse::getBankName(bank), usse::getTypeName(type.type), type.components, type.arraySize, size, index);
 
         return usse::RegisterReference(type, bank, index, size);
+    }
+
+    void Builder::freeRegister(usse::RegisterReference reg) {
+        if (reg.bank == usse::RegisterBank::Internal && reg.index + reg.size == iRegPointer) {
+            iRegPointer -= reg.size;
+        }
     }
 
     usse::RegisterReference Builder::registerParameter(const Parameter &parameter) {
@@ -259,6 +303,8 @@ namespace gxp {
         parameters.push_back(parameter);
 
         usse::RegisterReference reg = allocateRegister(parameters[index].getBank(), parameter.type);
+        parameters[index].resourceIndex = reg.index;
+        parameters[index].containerIndex = 0;
 
         return reg;
     }
@@ -396,6 +442,8 @@ namespace gxp {
         // Code
         header.primaryRegCount = paRegPointer;
         header.secondaryRegCount = saRegPointer;
+        header.tempRegCount1 = tRegPointer;
+        header.tempRegCount2 = tRegPointer; // Difference between both reg counts?
         {
             header.secondaryProgramOffset = data.size() - OFFSET_OF(header, secondaryProgramOffset);
             for (const Block &block : secondaryBlocks) {

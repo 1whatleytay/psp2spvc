@@ -8,11 +8,11 @@
 namespace usse {
 
     enum class RegisterBank {
-        Temp,
+        Temporary,
         Primary,
         Output,
         Secondary,
-        FloatInternal,
+        Internal,
         Special,
         Global,
         FloatConstant,
@@ -72,7 +72,10 @@ namespace usse {
 
         RegisterReference operator+(uint32_t value);
         uint32_t getSwizzleMask();
+        int32_t getSwizzleIndex(bool extended = false);
+        RegisterReference getHalf(uint32_t half);
         RegisterReference getComponents(uint32_t component, uint32_t count);
+        RegisterReference getElement(uint32_t element);
 
         RegisterReference() = default;
         RegisterReference(DataType type, RegisterBank bank, uint32_t index, uint32_t size);
@@ -85,7 +88,8 @@ namespace usse {
         uint8_t extension = 0;
         uint8_t number = 0;
 
-        bool needsDiv();
+        bool isHalf(Type type);
+        uint32_t getIndex(RegisterReference reference, uint32_t bits = 7);
 
         static BankLayout destLayout(RegisterBank bank);
         static BankLayout src0Layout(RegisterBank bank);

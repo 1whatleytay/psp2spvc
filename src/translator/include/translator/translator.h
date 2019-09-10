@@ -56,6 +56,7 @@ class CompilerGXP : public Compiler {
 
     void opLoad(const TranslatorArguments &arguments);
     void opStore(const TranslatorArguments &arguments);
+    void opMatrixTimesVector(const TranslatorArguments &arguments);
     void opConvertUToF(const TranslatorArguments &arguments);
     void opCompositeExtract(const TranslatorArguments &arguments);
     void opCompositeConstruct(const TranslatorArguments &arguments);

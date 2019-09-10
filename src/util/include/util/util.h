@@ -14,3 +14,12 @@ std::vector<T> loadFileData(const std::string &path) {
     stream.close();
     return data;
 }
+
+template<typename T>
+typename T::mapped_type &getOrThrow(T map, typename T::key_type key) {
+    auto reference = map.find(key);
+    if (reference == map.end())
+        throw std::runtime_error("Missing key in map.");
+
+    return reference->second;
+}

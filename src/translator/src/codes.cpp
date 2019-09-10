@@ -1,5 +1,7 @@
 #include <translator/translator.h>
 
+#include <util/util.h>
+
 #include <fmt/format.h>
 
 static std::string getString(const uint32_t *program, size_t &length) {
@@ -20,47 +22,64 @@ void CompilerGXP::undefined(const TranslatorArguments &arguments) {
 }
 
 void CompilerGXP::opLoad(const TranslatorArguments &arguments) {
-    spv::Id type = arguments.instruction[0]; // TODO: Type is important.
+    spv::Id type = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id pointer = arguments.instruction[2];
 
-    auto reg = idRegisters.find(pointer);
-    if (reg == idRegisters.end())
-        throw std::runtime_error(fmt::format("Source ID {} does not have an associated register.", pointer));
-
-    idRegisters[result] = reg->second;
+    // This is a redirect, but it should really load into temp.
+    // Maybe let the user chose if there want to assume redirect or copy until we can introduce analysis.
+    idRegisters[result] = getOrThrow(idRegisters, pointer);
 }
 
 void CompilerGXP::opStore(const TranslatorArguments &arguments) {
     spv::Id destination = arguments.instruction[0];
     spv::Id source = arguments.instruction[1];
 
-    auto sourceRegister = idRegisters.find(source);
-    if (sourceRegister == idRegisters.end())
-        throw std::runtime_error(fmt::format("Source ID {} was not loaded with a register reference.", source));
+    usse::RegisterReference sourceRegister = getOrThrow(idRegisters, source);
+    usse::RegisterReference destinationRegister;
+    if (idVaryings.find(destination) != idVaryings.end())
+        destinationRegister = getOrThrow(varyingReferences, getOrThrow(idVaryings, destination));
+    else
+        destinationRegister = getOrThrow(idRegisters, destination);
 
-    usse::RegisterReference destinationRegister = varyingReferences[idVaryings[destination]];
+    arguments.block.createMov(sourceRegister, destinationRegister);
+}
 
-    auto *var = maybe_get<SPIRVariable>(destination);
-    if (var) {
-        SPIRType type = get_type(var->basetype);
+void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id matrix = arguments.instruction[2];
+    spv::Id vector = arguments.instruction[3];
 
-        usse::DataType dataType = translateType(type);
+    usse::RegisterReference matrixRegister = getOrThrow(idRegisters, matrix);
+    usse::RegisterReference vectorRegister = getOrThrow(idRegisters, vector);
 
-        arguments.block.createMov(sourceRegister->second, destinationRegister);
-    } else {
-        arguments.block.createMov(sourceRegister->second, idRegisters[destination]);
+    assert(matrixRegister.type.type == vectorRegister.type.type);
+    assert(matrixRegister.type.arraySize == vectorRegister.type.components);
+
+    usse::RegisterReference internal = arguments.block.parent.allocateRegister(
+        usse::RegisterBank::Internal, vectorRegister.type);
+
+    usse::RegisterReference temp = arguments.block.parent.allocateRegister(
+        usse::RegisterBank::Temporary, vectorRegister.type);
+
+    for (uint32_t a = 0; a < vectorRegister.type.components; a++) {
+        arguments.block.createPack(matrixRegister.getElement(a), internal);
+        arguments.block.createDot(vectorRegister, internal, temp.getComponents(a, 1));
     }
+
+    arguments.block.parent.freeRegister(internal);
+    idRegisters[result] = temp;
 }
 
 void CompilerGXP::opConvertUToF(const TranslatorArguments &arguments) {
-    spv::Id type = arguments.instruction[0]; // TODO: Type is important.
+    spv::Id type = arguments.instruction[0];
     spv::Id destination = arguments.instruction[1];
     spv::Id source = arguments.instruction[2];
 
-    usse::RegisterReference srcReg = idRegisters[source];
+    usse::RegisterReference srcReg = getOrThrow(idRegisters, source);
     usse::RegisterReference destReg = arguments.block.parent.allocateRegister(
-        usse::RegisterBank::Primary, { usse::Type::Float32, 4, 1 });
+        usse::RegisterBank::Temporary, { usse::Type::Float32, 4, 1 });
 
     arguments.block.createPack(srcReg, destReg);
 
@@ -86,7 +105,7 @@ void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
 
     SPIRType type = get_type(typeId);
 
-    usse::RegisterReference output = arguments.block.parent.allocateRegister(usse::RegisterBank::Primary,
+    usse::RegisterReference output = arguments.block.parent.allocateRegister(usse::RegisterBank::Temporary,
         { translateType(type.basetype), type.vecsize, 1 });
 
     for (size_t a = 0; a < type.vecsize; a++) {
@@ -130,28 +149,30 @@ void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
     // This right now is only supported to accessing gl_PerVertex structs.
 
     SPIRConstant constant = get<SPIRConstant>(index);
-    uint32_t structIndex = constant.m.c[0].r[0].u32;
+    uint32_t value = constant.m.c[0].r[0].u32;
 
     SPIRVariable baseVariable = get<SPIRVariable>(base);
     SPIRType type = get_type(baseVariable.basetype);
-    if (type.basetype != SPIRType::Struct)
-        throw std::runtime_error("Access chain can only be created on gl_PerVertex struct.");
 
-    SPIRType memberType = get_type(type.member_types[structIndex]);
-    spv::BuiltIn builtIn;
+    if (type.basetype == SPIRType::Struct) {
+        SPIRType memberType = get_type(type.member_types[value]);
+        spv::BuiltIn builtIn;
 
-    if (is_member_builtin(type, structIndex, &builtIn)) {
-        gxp::ProgramVarying varying = translateVarying(builtIn);
-        auto varyingReference = varyingReferences.find(varying);
-
-        if (varyingReference != varyingReferences.end()) {
-            idRegisters[result] = varyingReference->second;
+        if (is_member_builtin(type, value, &builtIn)) {
+            idRegisters[result] = getOrThrow(varyingReferences, translateVarying(builtIn));
         } else {
-            throw std::runtime_error(
-                fmt::format("No varying registered with varying {}.", static_cast<uint32_t>(varying)));
+            if (value != 0)
+                throw std::runtime_error("Must link to a single element.");
+            idRegisters[result] = getOrThrow(idRegisters, base);
         }
     } else {
-        throw std::runtime_error("Access chain does not link to a varying.");
+        if (type.columns > 1) {
+            idRegisters[result] = getOrThrow(idRegisters, base).getElement(value);
+        } else if (type.vecsize > 1) {
+            idRegisters[result] = getOrThrow(idRegisters, base).getComponents(value, 1);
+        } else {
+            throw std::runtime_error("Access Chain to a non composite type.");
+        }
     }
 }
 
@@ -314,7 +335,7 @@ void CompilerGXP::createTranslators() {
         { spv::Op::OpVectorTimesScalar, "OpVectorTimesScalar", &CompilerGXP::unimplemented },
         { spv::Op::OpMatrixTimesScalar, "OpMatrixTimesScalar", &CompilerGXP::unimplemented },
         { spv::Op::OpVectorTimesMatrix, "OpVectorTimesMatrix", &CompilerGXP::unimplemented },
-        { spv::Op::OpMatrixTimesVector, "OpMatrixTimesVector", &CompilerGXP::unimplemented },
+        { spv::Op::OpMatrixTimesVector, "OpMatrixTimesVector", &CompilerGXP::opMatrixTimesVector },
         { spv::Op::OpMatrixTimesMatrix, "OpMatrixTimesMatrix", &CompilerGXP::unimplemented },
         { spv::Op::OpOuterProduct, "OpOuterProduct", &CompilerGXP::unimplemented },
         { spv::Op::OpDot, "OpDot", &CompilerGXP::unimplemented },

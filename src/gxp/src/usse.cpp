@@ -74,7 +74,7 @@ namespace usse {
     };
 
     const uint32_t swizzleStandardSize = 16;
-    std::array<SwizzleChannel, 4> swizzleVector4[2][swizzleStandardSize] = {
+    SwizzleVec4 swizzleVector4[2][swizzleStandardSize] = {
         {
             { SwizzleChannel::X, SwizzleChannel::X, SwizzleChannel::X, SwizzleChannel::X },
             { SwizzleChannel::Y, SwizzleChannel::Y, SwizzleChannel::Y, SwizzleChannel::Y },
@@ -113,7 +113,7 @@ namespace usse {
         },
     };
 
-    std::array<SwizzleChannel, 3> swizzleVector3[2][swizzleStandardSize] = {
+    SwizzleVec3 swizzleVector3[2][swizzleStandardSize] = {
         {
             { SwizzleChannel::X, SwizzleChannel::X, SwizzleChannel::X },
             { SwizzleChannel::Y, SwizzleChannel::Y, SwizzleChannel::Y },
@@ -151,8 +151,27 @@ namespace usse {
         },
     };
 
-    bool BankLayout::needsDiv() {
-        return bank != usse::RegisterBank::FloatConstant;
+    bool BankLayout::isHalf(Type type) {
+        return (
+            type == Type::Float32 ||
+            type == Type::Float16 ||
+            type == Type::Fixed10) &&
+
+            bank != usse::RegisterBank::FloatConstant &&
+            bank != usse::RegisterBank::Immediate;
+    }
+
+    uint32_t BankLayout::getIndex(RegisterReference reference, uint32_t bits) {
+        uint32_t index = reference.index;
+        bool doubleReg = isHalf(reference.type.type);
+
+        if (doubleReg)
+            index /= 2;
+        // Top Bit, is this wrong? Looks more complex in V3K source.
+        if (bank == RegisterBank::Internal)
+            index += 120 + (doubleReg ? 4 : 0);
+
+        return index;
     }
 
     BankLayout BankLayout::destLayout(RegisterBank bank) {
@@ -160,7 +179,8 @@ namespace usse {
         case RegisterBank::Primary: return { bank, 0, 2 };
         case RegisterBank::Secondary: return { bank, 1, 0 };
         case RegisterBank::Output: return { bank, 0, 1 };
-        case RegisterBank::Temp: return { bank, 0, 0 };
+        case RegisterBank::Internal:
+        case RegisterBank::Temporary: return {bank, 0, 0 };
         case RegisterBank::Special: return { bank, 1, 1 };
         case RegisterBank::Index: return { bank, 1, 2 };
         case RegisterBank::Indexed1: return { bank, 0, 3 };
@@ -174,14 +194,14 @@ namespace usse {
         case RegisterBank::Primary: return { bank, 0, 1 };
         case RegisterBank::Secondary: return { bank, 1, 1 };
         case RegisterBank::Output: return { bank, 1, 0 };
-        case RegisterBank::Temp: return { bank, 0, 0 };
+        case RegisterBank::Temporary: return {bank, 0, 0 };
         default:
             throw std::runtime_error("Unsupported src0 bank.");
         }
     }
     BankLayout BankLayout::srcLayout(RegisterBank bank) {
         switch (bank) {
-        case RegisterBank::Temp: return { bank, 0, 0 };
+        case RegisterBank::Temporary: return {bank, 0, 0 };
         case RegisterBank::Primary: return { bank, 0, 2 };
         case RegisterBank::Output: return { bank, 0, 1 };
         case RegisterBank::Secondary: return { bank, 0, 3 };
@@ -228,6 +248,32 @@ namespace usse {
         return mask;
     }
 
+    int32_t RegisterReference::getSwizzleIndex(bool extended) {
+        switch (type.components) {
+        case 4: {
+            usse::SwizzleVec4 vec;
+            std::copy(swizzle.begin(), swizzle.end(), vec.begin());
+            return usse::getSwizzleVec4Index(vec, extended);
+        }
+        case 3: {
+            usse::SwizzleVec3 vec;
+            std::copy(swizzle.begin(), swizzle.end(), vec.begin());
+            return usse::getSwizzleVec3Index(vec, extended);
+        }
+        case 1:
+            return usse::getSwizzleScalarIndex(swizzle[0]);
+        default:
+            throw std::runtime_error("Invalid component count for swizzle.");
+        }
+    }
+
+    RegisterReference RegisterReference::getHalf(uint32_t half) {
+        assert(type.components % 2 == 0);
+        uint32_t width = type.components / 2;
+
+        return getComponents(width * half, width);
+    }
+
     usse::RegisterReference RegisterReference::getComponents(uint32_t component, uint32_t count) {
 //        if (component + count > type.components)
 //            throw std::runtime_error(fmt::format(
@@ -256,6 +302,18 @@ namespace usse {
         }
 
         return ref;
+    }
+
+    RegisterReference RegisterReference::getElement(uint32_t element) {
+        if (element >= type.arraySize)
+            throw std::runtime_error("Register reference array out of bounds.");
+        usse::RegisterReference reg = *this;
+
+        reg.type.arraySize = 1;
+        reg.size = size / type.arraySize;
+        reg.index += reg.size * element;
+
+        return reg;
     }
 
     RegisterReference::RegisterReference(DataType type, RegisterBank bank, uint32_t index, uint32_t size)
@@ -300,11 +358,11 @@ namespace usse {
 
     std::string getBankName(RegisterBank bank) {
         switch (bank) {
-        case RegisterBank::Temp: return "Temp";
+        case RegisterBank::Temporary: return "Temp";
         case RegisterBank::Primary: return "Primary";
         case RegisterBank::Output: return "Output";
         case RegisterBank::Secondary: return "Secondary";
-        case RegisterBank::FloatInternal: return "Float Internal";
+        case RegisterBank::Internal: return "Float Internal";
         case RegisterBank::Special: return "Special";
         case RegisterBank::Global: return "Global";
         case RegisterBank::FloatConstant: return "Float Constant";
