@@ -78,7 +78,7 @@ namespace usse {
         RegisterReference getElement(uint32_t element);
 
         RegisterReference() = default;
-        RegisterReference(DataType type, RegisterBank bank, uint32_t index, uint32_t size);
+        RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex, uint32_t size);
     };
 
     class BankLayout {

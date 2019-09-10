@@ -38,6 +38,37 @@ namespace gxp {
         }
     }
 
+    std::string getVaryingName(ProgramVarying varying) {
+        switch (varying) {
+        case ProgramVarying::Position: return "Position";
+        case ProgramVarying::Fog: return "Fog";
+        case ProgramVarying::Color0: return "Color0";
+        case ProgramVarying::Color1: return "Color1";
+        case ProgramVarying::TexCoord0: return "TexCoord0";
+        case ProgramVarying::TexCoord1: return "TexCoord1";
+        case ProgramVarying::TexCoord2: return "TexCoord2";
+        case ProgramVarying::TexCoord3: return "TexCoord3";
+        case ProgramVarying::TexCoord4: return "TexCoord4";
+        case ProgramVarying::TexCoord5: return "TexCoord5";
+        case ProgramVarying::TexCoord6: return "TexCoord6";
+        case ProgramVarying::TexCoord7: return "TexCoord7";
+        case ProgramVarying::TexCoord8: return "TexCoord8";
+        case ProgramVarying::TexCoord9: return "TexCoord9";
+        case ProgramVarying::PointSize: return "PointSize";
+        case ProgramVarying::Clip0: return "Clip0";
+        case ProgramVarying::Clip1: return "Clip1";
+        case ProgramVarying::Clip2: return "Clip2";
+        case ProgramVarying::Clip3: return "Clip3";
+        case ProgramVarying::Clip4: return "Clip4";
+        case ProgramVarying::Clip5: return "Clip5";
+        case ProgramVarying::Clip6: return "Clip6";
+        case ProgramVarying::Clip7: return "Clip7";
+        case ProgramVarying::None:
+        default:
+            return "Invalid";
+        }
+    }
+
     bool iClipVarying(ProgramVarying varying) {
         auto varyingNum = static_cast<uint32_t>(varying);
         return varyingNum >= static_cast<uint32_t>(ProgramVarying::Clip0)

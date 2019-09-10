@@ -347,8 +347,6 @@ namespace gxp {
             if (varying == ProgramVarying::Position || varyings.vertex_outputs1 & getVaryingBits(varying)) {
                 references[varying] = allocateRegister(usse::RegisterBank::Output,
                     { usse::Type::Float32, 4, 1 });
-
-                oRegPointer += 4;
             }
         }
 
@@ -362,8 +360,6 @@ namespace gxp {
             if (texCoordInfo != texCoords.end()) {
                 references[varying] = allocateRegister(usse::RegisterBank::Output,
                     { usse::Type::Float32, texCoordInfo->componentCount, 1 });
-
-                oRegPointer += texCoordInfo->componentCount;
             }
         }
 
@@ -376,8 +372,6 @@ namespace gxp {
 
                 references[varying] = allocateRegister(usse::RegisterBank::Output,
                     { usse::Type::Float32, varyingSize, 1 });
-
-                oRegPointer += varyingSize;
             }
         }
 

@@ -105,6 +105,7 @@ namespace gxp {
         Clip7,
     };
 
+    std::string getVaryingName(ProgramVarying varying);
     bool iClipVarying(ProgramVarying varying);
     bool isTexCoordVarying(ProgramVarying varying);
     uint32_t getVaryingBits(ProgramVarying varying);

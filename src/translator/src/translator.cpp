@@ -4,10 +4,16 @@
 
 #include <fmt/format.h>
 
+#define VERTEX_POSITION_OUTPUT_ONLY
+
 // Position, PointSize, Clip0 and Clip1 are removed so they are not allocated over.
 const std::vector<gxp::ProgramVarying> allVaryings = {
     gxp::ProgramVarying::Color0,
     gxp::ProgramVarying::Color1,
+#ifdef VERTEX_POSITION_OUTPUT_ONLY
+    gxp::ProgramVarying::Clip0,
+    gxp::ProgramVarying::Clip1,
+#endif
     gxp::ProgramVarying::Clip2,
     gxp::ProgramVarying::Clip3,
     gxp::ProgramVarying::Clip4,
@@ -80,12 +86,14 @@ gxp::ProgramVarying CompilerGXP::translateVarying(spv::BuiltIn builtIn) {
     switch (builtIn) {
     case spv::BuiltInPosition:
         return gxp::ProgramVarying::Position;
+#ifndef VERTEX_POSITION_OUTPUT_ONLY
     case spv::BuiltInPointSize:
         return gxp::ProgramVarying::PointSize;
     case spv::BuiltInClipDistance:
         return gxp::ProgramVarying::Clip0;
     case spv::BuiltInCullDistance:
         return gxp::ProgramVarying::Clip1;
+#endif
     default:
         return gxp::ProgramVarying::None;
     }

@@ -63,9 +63,10 @@ void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
     usse::RegisterReference temp = arguments.block.parent.allocateRegister(
         usse::RegisterBank::Temporary, vectorRegister.type);
 
+    arguments.block.createPack(vectorRegister, internal);
+
     for (uint32_t a = 0; a < vectorRegister.type.components; a++) {
-        arguments.block.createPack(matrixRegister.getElement(a), internal);
-        arguments.block.createDot(vectorRegister, internal, temp.getComponents(a, 1));
+        arguments.block.createDot(matrixRegister.getElement(a), internal, temp.getComponents(a, 1));
     }
 
     arguments.block.parent.freeRegister(internal);

@@ -316,11 +316,17 @@ namespace usse {
         return reg;
     }
 
-    RegisterReference::RegisterReference(DataType type, RegisterBank bank, uint32_t index, uint32_t size)
-        : type(type), bank(bank), index(index), size(size) {
-        for (uint32_t a = 0; a < type.components; a++) {
-            swizzle.push_back(static_cast<usse::SwizzleChannel>(a));
+    RegisterReference::RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex, uint32_t size)
+        : type(type), bank(bank), size(size) {
+        bool swizzleUp = false;
+        if (regIndex % 2 == 1) {
+            regIndex--;
+            swizzleUp = true;
         }
+        for (uint32_t a = 0; a < type.components; a++) {
+            swizzle.push_back(static_cast<usse::SwizzleChannel>(a + swizzleUp));
+        }
+        index = regIndex;
     }
 
     std::string getTypeName(Type type) {
