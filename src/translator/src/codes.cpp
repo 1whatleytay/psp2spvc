@@ -147,8 +147,6 @@ void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
     spv::Id base = arguments.instruction[2];
     spv::Id index = arguments.instruction[3]; // Multiple indices, apparently.
 
-    // This right now is only supported to accessing gl_PerVertex structs.
-
     SPIRConstant constant = get<SPIRConstant>(index);
     uint32_t value = constant.m.c[0].r[0].u32;
 

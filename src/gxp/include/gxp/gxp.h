@@ -65,7 +65,7 @@ namespace gxp {
         Color0 = 0x0800,
     };
 
-    enum class ProgramTexCoordMasks : uint32_t {
+    enum class ProgramTexCoordVertexMasks : uint32_t {
         TexCoord0 = 0b111u << (3u * 0u),
         TexCoord1 = 0b111u << (3u * 1u),
         TexCoord2 = 0b111u << (3u * 2u),
@@ -76,6 +76,23 @@ namespace gxp {
         TexCoord7 = 0b111u << (3u * 7u),
         TexCoord8 = 0b111u << (3u * 8u),
         TexCoord9 = 0b111u << (3u * 9u),
+    };
+
+    enum class ProgramVaryingFragmentBits : uint32_t {
+        Position = 0xD000,
+        Fog = 0xC000,
+        Color0 = 0xA000,
+        Color1 = 0xB000,
+        TexCoord0 = 0x0000,
+        TexCoord1 = 0x1000,
+        TexCoord2 = 0x2000,
+        TexCoord3 = 0x3000,
+        TexCoord4 = 0x4000,
+        TexCoord5 = 0x5000,
+        TexCoord6 = 0x6000,
+        TexCoord7 = 0x7000,
+        TexCoord8 = 0x8000,
+        TexCoord9 = 0x9000,
     };
 
     enum class ProgramVarying {
@@ -108,32 +125,26 @@ namespace gxp {
     std::string getVaryingName(ProgramVarying varying);
     bool iClipVarying(ProgramVarying varying);
     bool isTexCoordVarying(ProgramVarying varying);
-    uint32_t getVaryingBits(ProgramVarying varying);
+    uint32_t getVertexVaryingBits(ProgramVarying varying);
+    uint32_t getFragmentVaryingBits(ProgramVarying varying);
 
-    class ProgramTexCoordInfo {
+    class ProgramVectorInfo {
     public:
         ProgramVarying varying;
-        uint32_t componentCount;
+        uint32_t components;
     };
 
-    class ParameterConfig {
-        uint16_t config = 0;
-    public:
-        void setCategory(ParameterCategory category);
-        void setType(ParameterType type);
-        void setComponentCount(uint32_t componentCount);
-        void setContainerIndex(uint32_t containerIndex);
-
-        ParameterCategory getCategory();
-        ParameterType getType();
-        uint32_t getComponentCount();
-        uint32_t getContainerIndex();
+    struct ProgramFragmentInputInfo {
+        std::uint32_t attribute_info = 0;
+        std::uint32_t resource_index = 0;
+        std::uint32_t size = 0;
+        std::uint32_t component_info = 0;
     };
 
     class ProgramParameterInfo {
     public:
         int32_t nameOffset = 0;
-        ParameterConfig config;
+        uint16_t config = 0;
         uint16_t semantic = 0;
         uint32_t arraySize = 0;
         uint32_t resourceIndex = 0;
@@ -217,4 +228,7 @@ namespace gxp {
         uint32_t containerCount = 0;
         uint32_t containerOffset = 0;
     };
+
+    uint16_t createParameterConfig(ParameterCategory category, ParameterType type,
+        uint32_t components, uint32_t containerIndex);
 }

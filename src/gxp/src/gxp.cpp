@@ -80,7 +80,7 @@ namespace gxp {
             && varyingNum <= static_cast<uint32_t>(ProgramVarying::TexCoord9);
     }
 
-    uint32_t getVaryingBits(ProgramVarying varying) {
+    uint32_t getVertexVaryingBits(ProgramVarying varying) {
         switch (varying) {
         case ProgramVarying::Fog: return static_cast<uint32_t>(ProgramVaryingVertexBits::Fog);
         case ProgramVarying::Color0: return static_cast<uint32_t>(ProgramVaryingVertexBits::Color0);
@@ -95,54 +95,58 @@ namespace gxp {
         case ProgramVarying::Clip6: return static_cast<uint32_t>(ProgramVaryingVertexBits::Clip6);
         case ProgramVarying::Clip7: return static_cast<uint32_t>(ProgramVaryingVertexBits::Clip7);
 
-        case ProgramVarying::TexCoord0: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord0);
-        case ProgramVarying::TexCoord1: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord1);
-        case ProgramVarying::TexCoord2: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord2);
-        case ProgramVarying::TexCoord3: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord3);
-        case ProgramVarying::TexCoord4: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord4);
-        case ProgramVarying::TexCoord5: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord5);
-        case ProgramVarying::TexCoord6: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord6);
-        case ProgramVarying::TexCoord7: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord7);
-        case ProgramVarying::TexCoord8: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord8);
-        case ProgramVarying::TexCoord9: return static_cast<uint32_t>(ProgramTexCoordMasks::TexCoord9);
+        case ProgramVarying::TexCoord0: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord0);
+        case ProgramVarying::TexCoord1: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord1);
+        case ProgramVarying::TexCoord2: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord2);
+        case ProgramVarying::TexCoord3: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord3);
+        case ProgramVarying::TexCoord4: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord4);
+        case ProgramVarying::TexCoord5: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord5);
+        case ProgramVarying::TexCoord6: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord6);
+        case ProgramVarying::TexCoord7: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord7);
+        case ProgramVarying::TexCoord8: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord8);
+        case ProgramVarying::TexCoord9: return static_cast<uint32_t>(ProgramTexCoordVertexMasks::TexCoord9);
 
         default: return 0;
         }
     }
-    
-    void ParameterConfig::setCategory(ParameterCategory category) {
-        config &= ~0b1111u;
-        config |= static_cast<uint16_t>(category) & 0b1111u;
+
+    uint32_t getFragmentVaryingBits(ProgramVarying varying) {
+        switch (varying) {
+        case ProgramVarying::Position: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Position);
+        case ProgramVarying::Fog: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Fog);
+        case ProgramVarying::Color0: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Color0);
+        case ProgramVarying::Color1: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Color1);
+        case ProgramVarying::TexCoord0: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord0);
+        case ProgramVarying::TexCoord1: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord1);
+        case ProgramVarying::TexCoord2: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord2);
+        case ProgramVarying::TexCoord3: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord3);
+        case ProgramVarying::TexCoord4: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord4);
+        case ProgramVarying::TexCoord5: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord5);
+        case ProgramVarying::TexCoord6: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord6);
+        case ProgramVarying::TexCoord7: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord7);
+        case ProgramVarying::TexCoord8: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord8);
+        case ProgramVarying::TexCoord9: return static_cast<uint32_t>(ProgramVaryingFragmentBits::TexCoord9);
+//        case ProgramVarying::PointSize: return static_cast<uint32_t>(ProgramVaryingFragmentBits::PointSize);
+//        case ProgramVarying::Clip0: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Clip0);
+//        case ProgramVarying::Clip1: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Clip1);
+//        case ProgramVarying::Clip2: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Clip2);
+//        case ProgramVarying::Clip3: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Clip3);
+//        case ProgramVarying::Clip4: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Clip4);
+//        case ProgramVarying::Clip5: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Clip5);
+//        case ProgramVarying::Clip6: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Clip6);
+//        case ProgramVarying::Clip7: return static_cast<uint32_t>(ProgramVaryingFragmentBits::Clip7);
+
+        default: return 0;
+        }
     }
 
-    void ParameterConfig::setType(ParameterType type) {
-        config &= ~(0b1111u << 4u);
-        config |= (static_cast<uint16_t>(type) & 0b1111u) << 4u;
-    }
-
-    void ParameterConfig::setComponentCount(uint32_t componentCount) {
-        config &= ~(0b1111u << 8u);
-        config |= (componentCount & 0b1111u) << 8u;
-    }
-
-    void ParameterConfig::setContainerIndex(uint32_t containerIndex) {
-        config &= ~(0b1111u << 12u);
+    uint16_t createParameterConfig(ParameterCategory category, ParameterType type,
+        uint32_t components, uint32_t containerIndex) {
+        uint16_t config = 0;
         config |= (containerIndex & 0b1111u) << 12u;
-    }
-
-    ParameterCategory ParameterConfig::getCategory() {
-        return static_cast<ParameterCategory>(config & 0b1111u);
-    }
-
-    ParameterType ParameterConfig::getType() {
-        return static_cast<ParameterType>((config & (0b1111u << 4u)) >> 4u);
-    }
-
-    uint32_t ParameterConfig::getComponentCount() {
-        return (config & (0b1111u << 8u)) >> 8u;
-    }
-
-    uint32_t ParameterConfig::getContainerIndex() {
-        return (config & (0b1111u << 12u)) >> 12u;
+        config |= (components & 0b1111u) << 8u;
+        config |= (static_cast<uint16_t>(type) & 0b1111u) << 4u;
+        config |= static_cast<uint16_t>(category) & 0b1111u;
+        return config;
     }
 }

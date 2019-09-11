@@ -101,6 +101,10 @@ namespace gxp {
         header.type = static_cast<uint8_t>(type);
     }
 
+    ShaderType Builder::getType() {
+        return static_cast<ShaderType>(header.type);
+    }
+
     void Block::createNop() {
         instructions.push_back(usse::makeNOP());
     }
@@ -309,9 +313,8 @@ namespace gxp {
         return reg;
     }
 
-    std::unordered_map<ProgramVarying, usse::RegisterReference> Builder::registerVaryings(
-        const std::vector<ProgramVarying> &outputs, const std::vector<ProgramTexCoordInfo> &texCoords) {
-        // TODO: This is only for vertex. Either make this method work for fragment or make another method for fragment.
+    std::unordered_map<ProgramVarying, usse::RegisterReference> Builder::registerVertexVaryings(
+        const std::vector<ProgramVarying> &outputs, const std::vector<ProgramVectorInfo> &texCoords) {
         varyings.varyings_count = outputs.size() + texCoords.size();
 
         varyings.vertex_outputs1 = 0;
@@ -322,10 +325,10 @@ namespace gxp {
             if (isTexCoordVarying(output))
                 throw std::runtime_error("TexCoord passed as regular output to createVaryings.");
 
-            varyings.vertex_outputs1 |= getVaryingBits(output);
+            varyings.vertex_outputs1 |= getVertexVaryingBits(output);
         }
 
-        for (ProgramTexCoordInfo texCoord : texCoords) {
+        for (ProgramVectorInfo texCoord : texCoords) {
             if (!isTexCoordVarying(texCoord.varying))
                 throw std::runtime_error("Non-TexCoord passed as TexCoord to createVaryings.");
 
@@ -333,7 +336,7 @@ namespace gxp {
                 - static_cast<uint32_t>(ProgramVarying::TexCoord0);
 
             uint32_t texCoordBits = 0;
-            texCoordBits |= (texCoord.componentCount - 1) & 0b11u;
+            texCoordBits |= (texCoord.components - 1) & 0b11u;
 
             varyings.vertex_outputs2 |= texCoordBits << (texCoordIndex * 3u);
         }
@@ -344,7 +347,7 @@ namespace gxp {
             a < static_cast<uint32_t>(ProgramVarying::TexCoord0); a++) {
             auto varying = static_cast<ProgramVarying>(a);
 
-            if (varying == ProgramVarying::Position || varyings.vertex_outputs1 & getVaryingBits(varying)) {
+            if (varying == ProgramVarying::Position || varyings.vertex_outputs1 & getVertexVaryingBits(varying)) {
                 references[varying] = allocateRegister(usse::RegisterBank::Output,
                     { usse::Type::Float32, 4, 1 });
             }
@@ -355,11 +358,11 @@ namespace gxp {
             auto varying = static_cast<ProgramVarying>(a);
 
             auto texCoordInfo = std::find_if(texCoords.begin(), texCoords.end(),
-                [varying](const ProgramTexCoordInfo &info) { return info.varying == varying; });
+                [varying](const ProgramVectorInfo &info) { return info.varying == varying; });
 
             if (texCoordInfo != texCoords.end()) {
                 references[varying] = allocateRegister(usse::RegisterBank::Output,
-                    { usse::Type::Float32, texCoordInfo->componentCount, 1 });
+                    {usse::Type::Float32, texCoordInfo->components, 1 });
             }
         }
 
@@ -367,7 +370,7 @@ namespace gxp {
              a <= static_cast<uint32_t>(ProgramVarying::Clip7); a++) {
             auto varying = static_cast<ProgramVarying>(a);
 
-            if (varyings.vertex_outputs1 & getVaryingBits(varying)) {
+            if (varyings.vertex_outputs1 & getVertexVaryingBits(varying)) {
                 uint32_t varyingSize = varying == ProgramVarying::PointSize ? 1 : 4;
 
                 references[varying] = allocateRegister(usse::RegisterBank::Output,
@@ -378,8 +381,43 @@ namespace gxp {
         return references;
     }
 
+    std::unordered_map<ProgramVarying, usse::RegisterReference> Builder::registerFragmentVaryings(
+        const std::vector<ProgramVectorInfo> &inputs) {
+        std::unordered_map<ProgramVarying, usse::RegisterReference> references;
+
+        for (ProgramVectorInfo varying : inputs) {
+            usse::DataType type = {usse::Type::Float32, varying.components, 1 };
+            usse::RegisterReference reference = allocateRegister(usse::RegisterBank::Primary, type);
+
+            // What the heck is going on with fragment inputs!?!?
+            ProgramFragmentInputInfo input;
+            input.size = (reference.size - 1) << 4u;
+            input.component_info = 0b11u << 4u; // 0b11 = Float, 0b10 = Half?
+            input.resource_index = reference.index;
+
+            input.attribute_info |= getFragmentVaryingBits(varying.varying); // Id
+            input.attribute_info |= 0x10A000u; // 0x20000000 = Half, 0x10000000 = Fixed, 0x10A000 = Float...
+            input.attribute_info |= (reference.type.components - 1) << 22u; // Component Count
+
+            // Samplers are not yet supported.
+
+            references[varying.varying] = reference;
+        }
+
+        return references;
+    }
+
+    usse::RegisterReference Builder::createFragmentOutput(usse::Type type, uint32_t components) {
+        varyings.output_comp_count = components;
+        varyings.output_param_type = static_cast<uint8_t>(getParameterTypeFromUSSEType(type));
+
+        return usse::RegisterReference({ type, components, 1 },
+            usse::RegisterBank::Primary, 0, usse::getTypeSize(type) * components / 4);
+    }
+
     std::vector<uint8_t> Builder::build() {
-        std::vector<uint8_t> data(sizeof(ProgramHeader));
+        std::vector<uint8_t> data(sizeof(ProgramHeader) + sizeof(ProgramVaryings));
+        header.varyingsOffset = sizeof(ProgramHeader) - OFFSET_OF(header, varyingsOffset);
 
         // Strings
         class StringEntry {
@@ -407,10 +445,8 @@ namespace gxp {
             parameter.resourceIndex = param.resourceIndex;
             parameter.arraySize = param.type.arraySize;
             parameter.semantic = static_cast<uint16_t>(param.semantic);
-            parameter.config.setType(getParameterTypeFromUSSEType(param.type.type));
-            parameter.config.setCategory(param.category);
-            parameter.config.setComponentCount(param.type.components);
-            parameter.config.setContainerIndex(param.containerIndex);
+            parameter.config = createParameterConfig(param.category, getParameterTypeFromUSSEType(param.type.type),
+                param.type.components, param.containerIndex);
 
             auto stringEntry = std::find_if(stringDB.begin(), stringDB.end(), [param](const StringEntry &entry) {
                 return entry.text == param.name;
@@ -426,11 +462,14 @@ namespace gxp {
         }
 
         // Varyings
-        header.varyingsOffset = data.size() - OFFSET_OF(header, varyingsOffset);
-        {
-            std::vector<uint8_t> varyingsData(sizeof(varyings));
-            std::memcpy(varyingsData.data(), &varyings, sizeof(varyings));
-            data.insert(data.end(), varyingsData.begin(), varyingsData.end());
+        if (getType() == ShaderType::Fragment && !fragmentInputs.empty()) {
+            varyings.varyings_count = fragmentInputs.size();
+            varyings.vertex_outputs1 = data.size() -
+                (sizeof(ProgramHeader) + sizeof(ProgramVaryings) - OFFSET_OF(varyings, vertex_outputs1));
+            data.insert(data.end(),
+                reinterpret_cast<uint8_t *>(fragmentInputs.data()),
+                reinterpret_cast<uint8_t *>(fragmentInputs.data())
+                + fragmentInputs.size() * sizeof(ProgramFragmentInputInfo));
         }
 
         // Code
@@ -508,6 +547,7 @@ namespace gxp {
         }
 
         std::memcpy(data.data(), &header, sizeof(ProgramHeader));
+        std::memcpy(data.data() + sizeof(ProgramHeader), &varyings, sizeof(ProgramVaryings));
 
         return data;
     }

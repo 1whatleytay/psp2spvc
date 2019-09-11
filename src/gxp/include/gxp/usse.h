@@ -6,7 +6,6 @@
 #include <cstdint>
 
 namespace usse {
-
     enum class RegisterBank {
         Temporary,
         Primary,

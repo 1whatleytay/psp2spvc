@@ -45,9 +45,15 @@ class CompilerGXP : public Compiler {
     static gxp::ParameterSemantic translateDecorations(spv::BuiltIn builtIn);
     static gxp::ProgramVarying translateVarying(spv::BuiltIn builtIn);
 
+    static gxp::ProgramVarying allocateVarying(
+        std::vector<gxp::ProgramVarying> &availableVaryings,
+        std::vector<gxp::ProgramVarying> &availableTexCoords,
+        uint32_t components);
+
     void createBlock(const SPIRBlock &block);
     void createFunction(const SPIRFunction &function);
-    void createShaderResources();
+    void createVertexShaderResources();
+    void createFragmentShaderResources();
     void createTranslators();
 
     // SPRIV Translation OPs

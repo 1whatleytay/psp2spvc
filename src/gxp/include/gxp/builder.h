@@ -64,8 +64,10 @@ namespace gxp {
         std::vector<Block> primaryBlocks;
         std::vector<Block> secondaryBlocks;
         std::vector<Parameter> parameters;
+        std::vector<ProgramFragmentInputInfo> fragmentInputs;
     public:
         void setType(ShaderType type);
+        ShaderType getType();
 
         Block *createPrimaryBlock();
         Block *createSecondaryBlock();
@@ -74,8 +76,13 @@ namespace gxp {
         void freeRegister(usse::RegisterReference reg);
 
         usse::RegisterReference registerParameter(const Parameter &parameter);
-        std::unordered_map<ProgramVarying, usse::RegisterReference> registerVaryings(
-            const std::vector<ProgramVarying> &outputs, const std::vector<ProgramTexCoordInfo> &texCoords);
+
+        std::unordered_map<ProgramVarying, usse::RegisterReference> registerVertexVaryings(
+            const std::vector<ProgramVarying> &outputs, const std::vector<ProgramVectorInfo> &texCoords);
+        std::unordered_map<ProgramVarying, usse::RegisterReference> registerFragmentVaryings(
+            const std::vector<ProgramVectorInfo> &inputs /*, samplers...*/);
+
+        usse::RegisterReference createFragmentOutput(usse::Type type, uint32_t components);
 
         std::vector<uint8_t> build();
 

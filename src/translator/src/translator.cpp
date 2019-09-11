@@ -10,16 +10,15 @@
 const std::vector<gxp::ProgramVarying> allVaryings = {
     gxp::ProgramVarying::Color0,
     gxp::ProgramVarying::Color1,
-#ifdef VERTEX_POSITION_OUTPUT_ONLY
-    gxp::ProgramVarying::Clip0,
-    gxp::ProgramVarying::Clip1,
-#endif
-    gxp::ProgramVarying::Clip2,
-    gxp::ProgramVarying::Clip3,
-    gxp::ProgramVarying::Clip4,
-    gxp::ProgramVarying::Clip5,
-    gxp::ProgramVarying::Clip6,
-    gxp::ProgramVarying::Clip7,
+// Afaik Clips don't work as a varying to fragment shader.
+//    gxp::ProgramVarying::Clip0,
+//    gxp::ProgramVarying::Clip1,
+//    gxp::ProgramVarying::Clip2,
+//    gxp::ProgramVarying::Clip3,
+//    gxp::ProgramVarying::Clip4,
+//    gxp::ProgramVarying::Clip5,
+//    gxp::ProgramVarying::Clip6,
+//    gxp::ProgramVarying::Clip7,
     gxp::ProgramVarying::Fog,
 };
 
@@ -99,6 +98,23 @@ gxp::ProgramVarying CompilerGXP::translateVarying(spv::BuiltIn builtIn) {
     }
 }
 
+gxp::ProgramVarying CompilerGXP::allocateVarying(
+    std::vector<gxp::ProgramVarying> &availableVaryings,
+    std::vector<gxp::ProgramVarying> &availableTexCoords,
+    uint32_t components) {
+    gxp::ProgramVarying selected = gxp::ProgramVarying::None;
+
+    if (components == 4 && !availableVaryings.empty()) {
+        selected = availableVaryings[0];
+        availableVaryings.erase(availableVaryings.begin());
+    } else if (!availableTexCoords.empty()) {
+        selected = availableTexCoords[0];
+        availableTexCoords.erase(availableTexCoords.begin());
+    }
+
+    return selected;
+}
+
 void CompilerGXP::createBlock(const SPIRBlock &block) {
     gxp::Block *gxpBlock = builder.createPrimaryBlock();
 
@@ -123,7 +139,7 @@ void CompilerGXP::createFunction(const SPIRFunction &function) {
     }
 }
 
-void CompilerGXP::createShaderResources() {
+void CompilerGXP::createVertexShaderResources() {
     ShaderResources resources = get_shader_resources();
 
     for (const auto &input : resources.stage_inputs) {
@@ -150,37 +166,22 @@ void CompilerGXP::createShaderResources() {
     }
 
     std::vector<gxp::ProgramVarying> varyings;
-    std::vector<gxp::ProgramTexCoordInfo> texCoords;
+    std::vector<gxp::ProgramVectorInfo> texCoords;
 
     std::vector<gxp::ProgramVarying> availableVaryings = allVaryings;
     std::vector<gxp::ProgramVarying> availableTexCoords = allTexCoords;
 
-    const auto &allocateVarying = [&availableVaryings, &availableTexCoords](uint32_t size) {
-        gxp::ProgramVarying selected = gxp::ProgramVarying::None;
-
-        if (size == 4 && !availableVaryings.empty()) {
-            selected = availableVaryings[0];
-            availableVaryings.erase(availableVaryings.begin());
-        } else if (!availableTexCoords.empty()) {
-            selected = availableTexCoords[0];
-            availableTexCoords.erase(availableTexCoords.begin());
-        }
-
-        return selected;
-    };
-
     for (const auto &output : resources.stage_outputs) {
-        const SPIRVariable &variable = get<SPIRVariable>(output.id);
         const SPIRType &type = get_type(output.type_id);
 
-        gxp::ProgramVarying varying = allocateVarying(type.vecsize);
+        gxp::ProgramVarying varying = allocateVarying(availableVaryings, availableTexCoords, type.vecsize);
         if (varying == gxp::ProgramVarying::None)
             throw std::runtime_error("No available space for varying.");
 
         if (gxp::isTexCoordVarying(varying)) {
-            gxp::ProgramTexCoordInfo info = { };
+            gxp::ProgramVectorInfo info = { };
             info.varying = varying;
-            info.componentCount = type.vecsize;
+            info.components = type.vecsize;
             texCoords.push_back(info);
         } else
             varyings.push_back(varying);
@@ -220,7 +221,52 @@ void CompilerGXP::createShaderResources() {
         }
     }
 
-    varyingReferences = builder.registerVaryings(varyings, texCoords);
+    varyingReferences = builder.registerVertexVaryings(varyings, texCoords);
+}
+
+void CompilerGXP::createFragmentShaderResources() {
+    ShaderResources resources = get_shader_resources();
+
+    if (resources.stage_outputs.size() == 1) {
+        Resource resource = resources.stage_outputs[0];
+        SPIRType type = get_type(resource.type_id);
+
+        idRegisters[resource.id] = builder.createFragmentOutput(translateType(type.basetype), type.vecsize);
+    } else {
+        throw std::runtime_error("Only one output is allowed for a fragment shader.");
+    }
+
+    for (const auto &uniform : resources.uniform_buffers) {
+        const SPIRType &type = get_type(uniform.type_id);
+
+        if (type.member_types.size() != 1)
+            throw std::runtime_error("Uniform blocks are not supported.");
+
+        gxp::Parameter parameter;
+        parameter.name = uniform.name;
+        parameter.category = gxp::ParameterCategory::Uniform;
+        parameter.type = translateType(get_type(type.member_types[0]));
+        idRegisters[uniform.id] = builder.registerParameter(parameter);
+    }
+
+    std::vector<gxp::ProgramVectorInfo> varyings;
+
+    std::vector<gxp::ProgramVarying> availableVaryings = allVaryings;
+    std::vector<gxp::ProgramVarying> availableTexCoords = allTexCoords;
+
+    for (const auto &input : resources.stage_inputs) {
+        const SPIRType &type = get_type(input.type_id);
+
+        gxp::ProgramVarying varying = allocateVarying(availableVaryings, availableTexCoords, type.vecsize);
+        if (varying == gxp::ProgramVarying::None)
+            throw std::runtime_error("No available space for varying.");
+
+        varyings.push_back({ varying, type.vecsize });
+
+        idVaryings[input.id] = varying;
+    }
+
+    varyingReferences = builder.registerFragmentVaryings(varyings);
 }
 
 std::vector<uint8_t> CompilerGXP::compileData() {
@@ -230,9 +276,11 @@ std::vector<uint8_t> CompilerGXP::compileData() {
     switch (entryPoints[0].execution_model) {
         case spv::ExecutionModelVertex:
             builder.setType(gxp::ShaderType::Vertex);
+            createVertexShaderResources();
             break;
         case spv::ExecutionModelFragment:
             builder.setType(gxp::ShaderType::Fragment);
+            createFragmentShaderResources();
             break;
         default:
             throw std::runtime_error("Entry point must be of type vertex or fragment.");
@@ -240,8 +288,6 @@ std::vector<uint8_t> CompilerGXP::compileData() {
 
     SPIREntryPoint entryPoint = get_entry_point(entryPoints[0].name, entryPoints[0].execution_model);
     SPIRFunction entryFunction = get<SPIRFunction>(entryPoint.self);
-
-    createShaderResources();
 
     // addFunction should recursively call the other functions.
 //    try {
