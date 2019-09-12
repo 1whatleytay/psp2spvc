@@ -234,6 +234,44 @@ namespace gxp {
             ));
     }
 
+    void Block::createSub(
+        usse::RegisterReference first,
+        usse::RegisterReference second,
+        usse::RegisterReference destination) {
+        usse::BankLayout firstBankLayout = usse::BankLayout::srcLayout(first.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        // Oh boy...
+        assert(second.bank == usse::RegisterBank::Internal);
+
+        assert(false);
+
+//        instructions.push_back(usse::makeVNMAD32(
+//            // pred
+//            // skipinv
+//            // src1_swiz_10_11
+//            // syncstart
+//            // dest_bank_ext
+//            // src1_swiz_9
+//            // src1_bank_ext
+//            // src2_bank_ext
+//            // src2_swiz
+//            // nosched
+//            // dest_mask
+//            // src1_mod
+//            // src2_mod
+//            // src1_swiz_7_8
+//            // dest_bank_sel
+//            // src1_bank_sel
+//            // src2_bank_sel
+//            // dest_n
+//            // src1_swiz_0_6
+//            // op2
+//            // src1_n
+//            // src2_n
+//            ));
+    }
+
     Block::Block(gxp::Builder &parent) : parent(parent) { }
 
     usse::RegisterBank Parameter::getBank() {
@@ -398,8 +436,11 @@ namespace gxp {
             input.attribute_info |= getFragmentVaryingBits(varying.varying); // Id
             input.attribute_info |= 0x10A000u; // 0x20000000 = Half, 0x10000000 = Fixed, 0x10A000 = Float...
             input.attribute_info |= (reference.type.components - 1) << 22u; // Component Count
+            input.attribute_info |= 0xFu; // Not a Sampler!
 
             // Samplers are not yet supported.
+
+            fragmentInputs.push_back(input);
 
             references[varying.varying] = reference;
         }
@@ -464,8 +505,8 @@ namespace gxp {
         // Varyings
         if (getType() == ShaderType::Fragment && !fragmentInputs.empty()) {
             varyings.varyings_count = fragmentInputs.size();
-            varyings.vertex_outputs1 = data.size() -
-                (sizeof(ProgramHeader) + sizeof(ProgramVaryings) - OFFSET_OF(varyings, vertex_outputs1));
+            varyings.vertex_outputs1 = data.size()
+                - (sizeof(ProgramHeader) + OFFSET_OF(varyings, varyings_count) + sizeof(uint32_t));
             data.insert(data.end(),
                 reinterpret_cast<uint8_t *>(fragmentInputs.data()),
                 reinterpret_cast<uint8_t *>(fragmentInputs.data())

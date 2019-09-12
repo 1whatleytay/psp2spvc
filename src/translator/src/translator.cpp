@@ -35,6 +35,8 @@ const std::vector<gxp::ProgramVarying> allTexCoords = {
     gxp::ProgramVarying::TexCoord9,
 };
 
+bool TranslatorReference::isStruct() { return !subreferences.empty(); }
+
 usse::Type CompilerGXP::translateType(SPIRType::BaseType baseType) {
     switch (baseType) {
     case SPIRType::BaseType::Boolean:
@@ -115,6 +117,42 @@ gxp::ProgramVarying CompilerGXP::allocateVarying(
     return selected;
 }
 
+TranslatorReference CompilerGXP::createVariable(usse::RegisterBank bank, const SPIRType &type) {
+    if (type.basetype == SPIRType::Struct) {
+        TranslatorReference reference;
+
+        for (uint32_t a : type.member_types) {
+            reference.subreferences.push_back(createVariable(bank, get_type(a)));
+        }
+
+        return reference;
+    } else {
+        return { builder.allocateRegister(bank, translateType(type)) };
+    }
+}
+
+TranslatorReference CompilerGXP::createParameter(gxp::ParameterCategory category, const SPIRType &type,
+    const std::string &name) {
+    if (type.basetype == SPIRType::Struct) {
+        TranslatorReference reference;
+
+        for (size_t a = 0; a < type.member_types.size(); a++) {
+            reference.subreferences.push_back(
+                createParameter(category, get_type(type.member_types[a]), name + "." + get_member_name(type.self, a)));
+        }
+
+        return reference;
+    } else {
+        gxp::Parameter parameter;
+
+        parameter.category = category;
+        parameter.type = translateType(type);
+        parameter.name = name;
+
+        return { builder.registerParameter(parameter) };
+    }
+}
+
 void CompilerGXP::createBlock(const SPIRBlock &block) {
     gxp::Block *gxpBlock = builder.createPrimaryBlock();
 
@@ -133,6 +171,12 @@ void CompilerGXP::createBlock(const SPIRBlock &block) {
 }
 
 void CompilerGXP::createFunction(const SPIRFunction &function) {
+    for (uint32_t local : function.local_variables) {
+        SPIRType type = get_type_from_variable(local);
+
+        idRegisters[local] = createVariable(usse::RegisterBank::Temporary, type);
+    }
+
     for (uint32_t blockId : function.blocks) {
         auto &block = get<SPIRBlock>(blockId);
         createBlock(block);
@@ -145,11 +189,7 @@ void CompilerGXP::createVertexShaderResources() {
     for (const auto &input : resources.stage_inputs) {
         const SPIRType &type = get_type(input.type_id);
 
-        gxp::Parameter parameter;
-        parameter.name = input.name;
-        parameter.category = gxp::ParameterCategory::Attribute;
-        parameter.type = translateType(type);
-        idRegisters[input.id] = builder.registerParameter(parameter);
+        idRegisters[input.id] = createParameter(gxp::ParameterCategory::Attribute, type, input.name);
     }
 
     for (const auto &uniform : resources.uniform_buffers) {
@@ -158,11 +198,9 @@ void CompilerGXP::createVertexShaderResources() {
         if (type.member_types.size() != 1)
             throw std::runtime_error("Uniform blocks are not supported.");
 
-        gxp::Parameter parameter;
-        parameter.name = uniform.name;
-        parameter.category = gxp::ParameterCategory::Uniform;
-        parameter.type = translateType(get_type(type.member_types[0]));
-        idRegisters[uniform.id] = builder.registerParameter(parameter);
+        SPIRType subType = get_type(type.member_types[0]);
+
+        idRegisters[uniform.id] = { { }, { createParameter(gxp::ParameterCategory::Uniform, subType, uniform.name) } };
     }
 
     std::vector<gxp::ProgramVarying> varyings;
@@ -231,7 +269,7 @@ void CompilerGXP::createFragmentShaderResources() {
         Resource resource = resources.stage_outputs[0];
         SPIRType type = get_type(resource.type_id);
 
-        idRegisters[resource.id] = builder.createFragmentOutput(translateType(type.basetype), type.vecsize);
+        idRegisters[resource.id] = { builder.createFragmentOutput(translateType(type.basetype), type.vecsize) };
     } else {
         throw std::runtime_error("Only one output is allowed for a fragment shader.");
     }
@@ -242,11 +280,9 @@ void CompilerGXP::createFragmentShaderResources() {
         if (type.member_types.size() != 1)
             throw std::runtime_error("Uniform blocks are not supported.");
 
-        gxp::Parameter parameter;
-        parameter.name = uniform.name;
-        parameter.category = gxp::ParameterCategory::Uniform;
-        parameter.type = translateType(get_type(type.member_types[0]));
-        idRegisters[uniform.id] = builder.registerParameter(parameter);
+        SPIRType subType = get_type(type.member_types[0]);
+
+        idRegisters[uniform.id] = { { }, { createParameter(gxp::ParameterCategory::Uniform, subType, uniform.name) } };
     }
 
     std::vector<gxp::ProgramVectorInfo> varyings;

@@ -28,19 +28,22 @@ void CompilerGXP::opLoad(const TranslatorArguments &arguments) {
 
     // This is a redirect, but it should really load into temp.
     // Maybe let the user chose if there want to assume redirect or copy until we can introduce analysis.
-    idRegisters[result] = getOrThrow(idRegisters, pointer);
+    if (idVaryings.find(pointer) != idVaryings.end())
+        idRegisters[result] = { getOrThrow(varyingReferences, getOrThrow(idVaryings, pointer)) };
+    else
+        idRegisters[result] = getOrThrow(idRegisters, pointer);
 }
 
 void CompilerGXP::opStore(const TranslatorArguments &arguments) {
     spv::Id destination = arguments.instruction[0];
     spv::Id source = arguments.instruction[1];
 
-    usse::RegisterReference sourceRegister = getOrThrow(idRegisters, source);
+    usse::RegisterReference sourceRegister = getOrThrow(idRegisters, source).reference;
     usse::RegisterReference destinationRegister;
     if (idVaryings.find(destination) != idVaryings.end())
         destinationRegister = getOrThrow(varyingReferences, getOrThrow(idVaryings, destination));
     else
-        destinationRegister = getOrThrow(idRegisters, destination);
+        destinationRegister = getOrThrow(idRegisters, destination).reference;
 
     arguments.block.createMov(sourceRegister, destinationRegister);
 }
@@ -51,8 +54,8 @@ void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
     spv::Id matrix = arguments.instruction[2];
     spv::Id vector = arguments.instruction[3];
 
-    usse::RegisterReference matrixRegister = getOrThrow(idRegisters, matrix);
-    usse::RegisterReference vectorRegister = getOrThrow(idRegisters, vector);
+    usse::RegisterReference matrixRegister = getOrThrow(idRegisters, matrix).reference;
+    usse::RegisterReference vectorRegister = getOrThrow(idRegisters, vector).reference;
 
     assert(matrixRegister.type.type == vectorRegister.type.type);
     assert(matrixRegister.type.arraySize == vectorRegister.type.components);
@@ -70,7 +73,7 @@ void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
     }
 
     arguments.block.parent.freeRegister(internal);
-    idRegisters[result] = temp;
+    idRegisters[result] = { temp };
 }
 
 void CompilerGXP::opConvertUToF(const TranslatorArguments &arguments) {
@@ -78,13 +81,13 @@ void CompilerGXP::opConvertUToF(const TranslatorArguments &arguments) {
     spv::Id destination = arguments.instruction[1];
     spv::Id source = arguments.instruction[2];
 
-    usse::RegisterReference srcReg = getOrThrow(idRegisters, source);
+    usse::RegisterReference srcReg = getOrThrow(idRegisters, source).reference;
     usse::RegisterReference destReg = arguments.block.parent.allocateRegister(
         usse::RegisterBank::Temporary, { usse::Type::Float32, 4, 1 });
 
     arguments.block.createPack(srcReg, destReg);
 
-    idRegisters[destination] = destReg;
+    idRegisters[destination] = { destReg };
 }
 
 void CompilerGXP::opCompositeExtract(const TranslatorArguments &arguments) {
@@ -97,7 +100,7 @@ void CompilerGXP::opCompositeExtract(const TranslatorArguments &arguments) {
     if (reg == idRegisters.end())
         throw std::runtime_error(fmt::format("Source ID {} was not loaded with a register reference.", source));
 
-    idRegisters[result] = reg->second.getComponents(index, 1);
+    idRegisters[result] = { reg->second.reference.getComponents(index, 1) };
 }
 
 void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
@@ -117,7 +120,7 @@ void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
         // This is very wrong. Rework this!
         auto reg = idRegisters.find(vecId);
         if (reg != idRegisters.end()) {
-            source = reg->second;
+            source = reg->second.reference;
         } else if (type.basetype == SPIRType::Float) {
             SPIRConstant spvConstant = get<SPIRConstant>(vecId);
 
@@ -138,7 +141,7 @@ void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
         arguments.block.createMov(source, output.getComponents(a, 1));
     }
 
-    idRegisters[result] = output;
+    idRegisters[result] = { output };
 }
 
 void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
@@ -150,29 +153,64 @@ void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
     SPIRConstant constant = get<SPIRConstant>(index);
     uint32_t value = constant.m.c[0].r[0].u32;
 
-    SPIRVariable baseVariable = get<SPIRVariable>(base);
-    SPIRType type = get_type(baseVariable.basetype);
+    SPIRType type = get_type_from_variable(base);
+    spv::BuiltIn builtIn;
 
-    if (type.basetype == SPIRType::Struct) {
-        SPIRType memberType = get_type(type.member_types[value]);
-        spv::BuiltIn builtIn;
-
-        if (is_member_builtin(type, value, &builtIn)) {
-            idRegisters[result] = getOrThrow(varyingReferences, translateVarying(builtIn));
-        } else {
-            if (value != 0)
-                throw std::runtime_error("Must link to a single element.");
-            idRegisters[result] = getOrThrow(idRegisters, base);
-        }
+    if (type.basetype == SPIRType::Struct && is_member_builtin(type, value, &builtIn)) {
+        idRegisters[result] = { getOrThrow(varyingReferences, translateVarying(builtIn)) };
     } else {
-        if (type.columns > 1) {
-            idRegisters[result] = getOrThrow(idRegisters, base).getElement(value);
-        } else if (type.vecsize > 1) {
-            idRegisters[result] = getOrThrow(idRegisters, base).getComponents(value, 1);
+        TranslatorReference reference = getOrThrow(idRegisters, base);
+
+        if (reference.isStruct()) {
+            idRegisters[result] = reference.subreferences[value];
+        } else if (reference.reference.type.arraySize > 1) {
+            idRegisters[result] = { reference.reference.getElement(value) };
+        } else if (reference.reference.type.components > 1) {
+            idRegisters[result] = { reference.reference.getComponents(value, 1) };
         } else {
             throw std::runtime_error("Access Chain to a non composite type.");
         }
     }
+}
+
+
+void CompilerGXP::opVectorShuffle(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id firstId = arguments.instruction[2];
+    spv::Id secondId = arguments.instruction[3];
+
+    SPIRType type = get_type(typeId);
+
+    usse::RegisterReference first = getOrThrow(idRegisters, firstId).reference;
+    usse::RegisterReference second = getOrThrow(idRegisters, secondId).reference;
+
+    usse::RegisterReference temp = arguments.block.parent.allocateRegister(
+        usse::RegisterBank::Temporary, translateType(type));
+
+    for (uint32_t a = 0; a < type.vecsize; a++) {
+        uint32_t index = arguments.instruction[4 + a];
+
+        usse::RegisterReference source;
+
+        if (index < first.type.components)
+            source = first.getComponents(index, 1);
+        else
+            source = second.getComponents(index - first.type.components, 1);
+
+        arguments.block.createMov(source, temp.getComponents(a, 1));
+    }
+
+    idRegisters[result] = { temp };
+}
+
+void CompilerGXP::opFSub(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id firstId = arguments.instruction[2];
+    spv::Id secondId = arguments.instruction[3];
+
+    assert(false);
 }
 
 TranslatorArguments::TranslatorArguments(
@@ -268,7 +306,7 @@ void CompilerGXP::createTranslators() {
         { static_cast<spv::Op>(76), "OpUndefined", &CompilerGXP::undefined },
         { spv::Op::OpVectorExtractDynamic, "OpVectorExtractDynamic", &CompilerGXP::unimplemented },
         { spv::Op::OpVectorInsertDynamic, "OpVectorInsertDynamic", &CompilerGXP::unimplemented },
-        { spv::Op::OpVectorShuffle, "OpVectorShuffle", &CompilerGXP::unimplemented },
+        { spv::Op::OpVectorShuffle, "OpVectorShuffle", &CompilerGXP::opVectorShuffle },
         { spv::Op::OpCompositeConstruct, "OpCompositeConstruct", &CompilerGXP::opCompositeConstruct },
         { spv::Op::OpCompositeExtract, "OpCompositeExtract", &CompilerGXP::opCompositeExtract },
         { spv::Op::OpCompositeInsert, "OpCompositeInsert", &CompilerGXP::unimplemented },

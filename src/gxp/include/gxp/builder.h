@@ -34,6 +34,10 @@ namespace gxp {
             usse::RegisterReference first,
             usse::RegisterReference second,
             usse::RegisterReference destination);
+        void createSub(
+            usse::RegisterReference first,
+            usse::RegisterReference second,
+            usse::RegisterReference destination);
     };
 
     class Parameter {

@@ -19,17 +19,25 @@ public:
 };
 
 class TranslatorArguments {
-public:
-    gxp::Block &block;
-    const TranslatorCode &code;
-    const uint32_t *instruction;
-    uint32_t wordCount;
-
     TranslatorArguments(
         gxp::Block &block,
         const TranslatorCode &code,
         const uint32_t *instruction,
         uint32_t wordCount);
+    friend class CompilerGXP;
+public:
+    gxp::Block &block;
+    const TranslatorCode &code;
+    const uint32_t *instruction;
+    uint32_t wordCount;
+};
+
+class TranslatorReference {
+public:
+    usse::RegisterReference reference;
+    std::vector<TranslatorReference> subreferences;
+
+    bool isStruct();
 };
 
 class CompilerGXP : public Compiler {
@@ -37,7 +45,7 @@ class CompilerGXP : public Compiler {
 
     std::vector<TranslatorCode> codes;
     std::unordered_map<spv::Id, gxp::ProgramVarying> idVaryings;
-    std::unordered_map<spv::Id, usse::RegisterReference> idRegisters;
+    std::unordered_map<spv::Id, TranslatorReference> idRegisters;
     std::unordered_map<gxp::ProgramVarying, usse::RegisterReference> varyingReferences;
 
     static usse::Type translateType(SPIRType::BaseType baseType);
@@ -49,6 +57,10 @@ class CompilerGXP : public Compiler {
         std::vector<gxp::ProgramVarying> &availableVaryings,
         std::vector<gxp::ProgramVarying> &availableTexCoords,
         uint32_t components);
+
+    TranslatorReference createVariable(usse::RegisterBank bank, const SPIRType &type);
+    TranslatorReference createParameter(gxp::ParameterCategory category, const SPIRType &type,
+        const std::string &name);
 
     void createBlock(const SPIRBlock &block);
     void createFunction(const SPIRFunction &function);
@@ -67,6 +79,8 @@ class CompilerGXP : public Compiler {
     void opCompositeExtract(const TranslatorArguments &arguments);
     void opCompositeConstruct(const TranslatorArguments &arguments);
     void opAccessChain(const TranslatorArguments &arguments);
+    void opVectorShuffle(const TranslatorArguments &arguments);
+    void opFSub(const TranslatorArguments &arguments);
 public:
 
     std::vector<uint8_t> compileData();
