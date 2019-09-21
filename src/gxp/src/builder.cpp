@@ -184,7 +184,7 @@ namespace gxp {
             srcBankLayout.number, // src1_bank_sel
             srcBankLayout.number, // src2_bank_sel
             destBankLayout.getIndex(destination), // dest_n
-            static_cast<uint32_t>(destination.swizzle[3]) & 0b11u, // comp_sel_3
+            destination.swizzle.size() > 3 ? static_cast<uint32_t>(destination.swizzle[3]) & 0b11u : 0, // comp_sel_3
             false, // scale
             static_cast<uint32_t>(destination.swizzle[1]) & 0b11u, // comp_sel_1
             static_cast<uint32_t>(destination.swizzle[2]) & 0b11u, // comp_sel_2
@@ -226,7 +226,7 @@ namespace gxp {
             second.index, // gpi0_n
             destBankLayout.getIndex(destination), // dest_n
             second.getSwizzleIndex(), // gpi0_swiz
-            static_cast<usse::Param>(first.swizzle[3]), // src1_swiz_w
+            first.swizzle.size() > 3 ? static_cast<usse::Param>(first.swizzle[3]) : 0, // src1_swiz_w
             static_cast<usse::Param>(first.swizzle[2]), // src1_swiz_z
             static_cast<usse::Param>(first.swizzle[1]), // src1_swiz_y
             static_cast<usse::Param>(first.swizzle[0]), // src1_swiz_x
@@ -239,37 +239,205 @@ namespace gxp {
         usse::RegisterReference second,
         usse::RegisterReference destination) {
         usse::BankLayout firstBankLayout = usse::BankLayout::srcLayout(first.bank);
+        usse::BankLayout secondBankLayout = usse::BankLayout::srcLayout(second.bank);
         usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
 
-        // Oh boy...
-        assert(second.bank == usse::RegisterBank::Internal);
+        uint32_t shift = 0;
+        uint32_t firstSwizzle = 0;
+        for (usse::SwizzleChannel channel : first.swizzle) {
+            firstSwizzle |= static_cast<uint32_t>(channel) << shift;
+            shift += 3;
+        }
 
-        assert(false);
+        // First/Second sources are flipped so negative effect can be applied to src1. -x + y = y - x
+        instructions.push_back(usse::makeVNMAD32(
+            0, // pred
+            0, // skipinv
+            (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
+            secondBankLayout.extension, // src1_bank_ext
+            firstBankLayout.extension, // src2_bank_ext
+            second.getSwizzleIndex(), // src2_swiz
+            0, // nosched
+            destination.getSwizzleMask(), // dest_mask
+            0b01, // src1_mod
+            0b0, // src2_mod
+            (firstSwizzle >> 7u) & 0b11u, // src1_swiz_7_8
+            destBankLayout.number, // dest_bank_sel
+            secondBankLayout.number, // src1_bank_sel
+            firstBankLayout.number, // src2_bank_sel
+            destBankLayout.getIndex(destination), // dest_n
+            (firstSwizzle >> 0u) & 0b1111111u, // src1_swiz_0_6
+            static_cast<usse::Param>(usse::InstructionVNMADOp::Add), // op2
+            secondBankLayout.getIndex(second), // src1_n
+            firstBankLayout.getIndex(first) // src2_n
+        ));
+    }
 
-//        instructions.push_back(usse::makeVNMAD32(
-//            // pred
-//            // skipinv
-//            // src1_swiz_10_11
-//            // syncstart
-//            // dest_bank_ext
-//            // src1_swiz_9
-//            // src1_bank_ext
-//            // src2_bank_ext
-//            // src2_swiz
-//            // nosched
-//            // dest_mask
-//            // src1_mod
-//            // src2_mod
-//            // src1_swiz_7_8
-//            // dest_bank_sel
-//            // src1_bank_sel
-//            // src2_bank_sel
-//            // dest_n
-//            // src1_swiz_0_6
-//            // op2
-//            // src1_n
-//            // src2_n
-//            ));
+    void Block::createMul(
+        usse::RegisterReference first,
+        usse::RegisterReference second,
+        usse::RegisterReference destination) {
+        usse::BankLayout firstBankLayout = usse::BankLayout::srcLayout(first.bank);
+        usse::BankLayout secondBankLayout = usse::BankLayout::srcLayout(second.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        uint32_t shift = 0;
+        uint32_t firstSwizzle = 0;
+        for (usse::SwizzleChannel channel : first.swizzle) {
+            firstSwizzle |= static_cast<uint32_t>(channel) << shift;
+            shift += 3;
+        }
+
+        instructions.push_back(usse::makeVNMAD32(
+            0, // pred
+            0, // skipinv
+            (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
+            firstBankLayout.extension, // src1_bank_ext
+            secondBankLayout.extension, // src2_bank_ext
+            second.getSwizzleIndex(), // src2_swiz
+            0, // nosched
+            destination.getSwizzleMask(), // dest_mask
+            0b00, // src1_mod
+            0b0, // src2_mod
+            (firstSwizzle >> 7u) & 0b11u, // src1_swiz_7_8
+            destBankLayout.number, // dest_bank_sel
+            firstBankLayout.number, // src1_bank_sel
+            secondBankLayout.number, // src2_bank_sel
+            destBankLayout.getIndex(destination), // dest_n
+            (firstSwizzle >> 0u) & 0b1111111u, // src1_swiz_0_6
+            static_cast<usse::Param>(usse::InstructionVNMADOp::Multiply), // op2
+            firstBankLayout.getIndex(first), // src1_n
+            secondBankLayout.getIndex(second) // src2_n
+        ));
+    }
+
+    void Block::createReverseSquareRoot(
+        usse::RegisterReference source,
+        usse::RegisterReference destination) {
+        usse::BankLayout srcBankLayout = usse::BankLayout::srcLayout(source.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        usse::Param typeTable[] = {
+            0, // Signed8 - Unsupported
+            0, // Signed16 - Unsupported
+            0, // Signed32 - Unsupported
+            2, // Fixed10
+            1, // Float16
+            0, // Float32
+            0, // Unsigned8 - Unsupported
+            0, // Unsigned16 - Unsupported
+            0, // Unsigned32 - Unsupported
+            0, // Output8 - Unsupported
+        };
+
+        instructions.push_back(usse::makeVCOMP(
+            0, // pred
+            0, // skipinv
+            typeTable[static_cast<uint32_t>(destination.type.type)], // dest_type
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            0, // end
+            srcBankLayout.extension, // src1_bank_ext
+            0, // repeat_count
+            0, // nosched
+            static_cast<usse::Param>(usse::InstructionVCOMPOp::ReverseSquareRoot), // op2
+            typeTable[static_cast<uint32_t>(source.type.type)], // src_type
+            0b00, // src1_mod
+            static_cast<usse::Param>(source.swizzle[0]), // src_comp
+            destBankLayout.number, // dest_bank
+            srcBankLayout.number, // src1_bank
+            destBankLayout.getIndex(destination), // dest_n
+            srcBankLayout.getIndex(source), // src1_n
+            destination.getSwizzleMask() // write_mask
+        ));
+    }
+
+    void Block::createMin(
+        usse::RegisterReference first,
+        usse::RegisterReference second,
+        usse::RegisterReference destination) {
+        usse::BankLayout firstBankLayout = usse::BankLayout::srcLayout(first.bank);
+        usse::BankLayout secondBankLayout = usse::BankLayout::srcLayout(second.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        uint32_t shift = 0;
+        uint32_t firstSwizzle = 0;
+        for (usse::SwizzleChannel channel : first.swizzle) {
+            firstSwizzle |= static_cast<uint32_t>(channel) << shift;
+            shift += 3;
+        }
+
+        instructions.push_back(usse::makeVNMAD32(
+            0, // pred
+            0, // skipinv
+            (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
+            firstBankLayout.extension, // src1_bank_ext
+            secondBankLayout.extension, // src2_bank_ext
+            second.getSwizzleIndex(), // src2_swiz
+            0, // nosched
+            destination.getSwizzleMask(), // dest_mask
+            0b00, // src1_mod
+            0b0, // src2_mod
+            (firstSwizzle >> 7u) & 0b11u, // src1_swiz_7_8
+            destBankLayout.number, // dest_bank_sel
+            firstBankLayout.number, // src1_bank_sel
+            secondBankLayout.number, // src2_bank_sel
+            destBankLayout.getIndex(destination), // dest_n
+            (firstSwizzle >> 0u) & 0b1111111u, // src1_swiz_0_6
+            static_cast<usse::Param>(usse::InstructionVNMADOp::Min), // op2
+            firstBankLayout.getIndex(first), // src1_n
+            secondBankLayout.getIndex(second) // src2_n
+        ));
+    }
+
+    void Block::createMax(
+        usse::RegisterReference first,
+        usse::RegisterReference second,
+        usse::RegisterReference destination) {
+        usse::BankLayout firstBankLayout = usse::BankLayout::srcLayout(first.bank);
+        usse::BankLayout secondBankLayout = usse::BankLayout::srcLayout(second.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        uint32_t shift = 0;
+        uint32_t firstSwizzle = 0;
+        for (usse::SwizzleChannel channel : first.swizzle) {
+            firstSwizzle |= static_cast<uint32_t>(channel) << shift;
+            shift += 3;
+        }
+
+        instructions.push_back(usse::makeVNMAD32(
+            0, // pred
+            0, // skipinv
+            (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
+            firstBankLayout.extension, // src1_bank_ext
+            secondBankLayout.extension, // src2_bank_ext
+            second.getSwizzleIndex(), // src2_swiz
+            0, // nosched
+            destination.getSwizzleMask(), // dest_mask
+            0b00, // src1_mod
+            0b0, // src2_mod
+            (firstSwizzle >> 7u) & 0b11u, // src1_swiz_7_8
+            destBankLayout.number, // dest_bank_sel
+            firstBankLayout.number, // src1_bank_sel
+            secondBankLayout.number, // src2_bank_sel
+            destBankLayout.getIndex(destination), // dest_n
+            (firstSwizzle >> 0u) & 0b1111111u, // src1_swiz_0_6
+            static_cast<usse::Param>(usse::InstructionVNMADOp::Max), // op2
+            firstBankLayout.getIndex(first), // src1_n
+            secondBankLayout.getIndex(second) // src2_n
+        ));
     }
 
     Block::Block(gxp::Builder &parent) : parent(parent) { }

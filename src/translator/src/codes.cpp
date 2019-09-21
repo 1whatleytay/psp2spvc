@@ -4,15 +4,6 @@
 
 #include <fmt/format.h>
 
-static std::string getString(const uint32_t *program, size_t &length) {
-    auto *cString = reinterpret_cast<const char *>(program);
-    size_t size = strlen(cString) + 1;
-    size_t remainder = size % sizeof(uint32_t);
-
-    length = size / sizeof(uint32_t) + (remainder == 0 ? 0 : 1);
-    return std::string(cString);
-}
-
 void CompilerGXP::unimplemented(const TranslatorArguments &arguments) {
     throw std::runtime_error(fmt::format("{} is not implemented.", arguments.code.name));
 }
@@ -60,10 +51,10 @@ void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
     assert(matrixRegister.type.type == vectorRegister.type.type);
     assert(matrixRegister.type.arraySize == vectorRegister.type.components);
 
-    usse::RegisterReference internal = arguments.block.parent.allocateRegister(
+    usse::RegisterReference internal = builder.allocateRegister(
         usse::RegisterBank::Internal, vectorRegister.type);
 
-    usse::RegisterReference temp = arguments.block.parent.allocateRegister(
+    usse::RegisterReference temp = builder.allocateRegister(
         usse::RegisterBank::Temporary, vectorRegister.type);
 
     arguments.block.createPack(vectorRegister, internal);
@@ -72,7 +63,7 @@ void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
         arguments.block.createDot(matrixRegister.getElement(a), internal, temp.getComponents(a, 1));
     }
 
-    arguments.block.parent.freeRegister(internal);
+    builder.freeRegister(internal);
     idRegisters[result] = { temp };
 }
 
@@ -82,7 +73,7 @@ void CompilerGXP::opConvertUToF(const TranslatorArguments &arguments) {
     spv::Id source = arguments.instruction[2];
 
     usse::RegisterReference srcReg = getOrThrow(idRegisters, source).reference;
-    usse::RegisterReference destReg = arguments.block.parent.allocateRegister(
+    usse::RegisterReference destReg = builder.allocateRegister(
         usse::RegisterBank::Temporary, { usse::Type::Float32, 4, 1 });
 
     arguments.block.createPack(srcReg, destReg);
@@ -109,7 +100,7 @@ void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
 
     SPIRType type = get_type(typeId);
 
-    usse::RegisterReference output = arguments.block.parent.allocateRegister(usse::RegisterBank::Temporary,
+    usse::RegisterReference output = builder.allocateRegister(usse::RegisterBank::Temporary,
         { translateType(type.basetype), type.vecsize, 1 });
 
     for (size_t a = 0; a < type.vecsize; a++) {
@@ -148,29 +139,39 @@ void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
     spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id base = arguments.instruction[2];
-    spv::Id index = arguments.instruction[3]; // Multiple indices, apparently.
 
-    SPIRConstant constant = get<SPIRConstant>(index);
-    uint32_t value = constant.m.c[0].r[0].u32;
+    TranslatorReference ref;
+
+    auto builtIn = static_cast<spv::BuiltIn>(0);
+    uint32_t builtInValue = get<SPIRConstant>(arguments.instruction[3]).m.c[0].r[0].u32;
 
     SPIRType type = get_type_from_variable(base);
-    spv::BuiltIn builtIn;
 
-    if (type.basetype == SPIRType::Struct && is_member_builtin(type, value, &builtIn)) {
+    if (type.basetype == SPIRType::Struct && is_member_builtin(type, builtInValue, &builtIn)) {
         idRegisters[result] = { getOrThrow(varyingReferences, translateVarying(builtIn)) };
+        return;
     } else {
-        TranslatorReference reference = getOrThrow(idRegisters, base);
+        ref = getOrThrow(idRegisters, base);
+    }
 
-        if (reference.isStruct()) {
-            idRegisters[result] = reference.subreferences[value];
-        } else if (reference.reference.type.arraySize > 1) {
-            idRegisters[result] = { reference.reference.getElement(value) };
-        } else if (reference.reference.type.components > 1) {
-            idRegisters[result] = { reference.reference.getComponents(value, 1) };
+    for (uint32_t a = 3; a < arguments.wordCount - 1; a++) {
+        spv::Id index = arguments.instruction[a];
+
+        uint32_t value = get<SPIRConstant>(index).m.c[0].r[0].u32;
+
+        if (ref.isStruct()) {
+            TranslatorReference temp = ref.subreferences[value];
+            ref = temp;
+        } else if (ref.reference.type.arraySize > 1) {
+            ref = { ref.reference.getElement(value) };
+        } else if (ref.reference.type.components > 1) {
+            ref = { ref.reference.getComponents(value, 1) };
         } else {
             throw std::runtime_error("Access Chain to a non composite type.");
         }
     }
+
+    idRegisters[result] = ref;
 }
 
 
@@ -185,7 +186,7 @@ void CompilerGXP::opVectorShuffle(const TranslatorArguments &arguments) {
     usse::RegisterReference first = getOrThrow(idRegisters, firstId).reference;
     usse::RegisterReference second = getOrThrow(idRegisters, secondId).reference;
 
-    usse::RegisterReference temp = arguments.block.parent.allocateRegister(
+    usse::RegisterReference temp = builder.allocateRegister(
         usse::RegisterBank::Temporary, translateType(type));
 
     for (uint32_t a = 0; a < type.vecsize; a++) {
@@ -210,7 +211,122 @@ void CompilerGXP::opFSub(const TranslatorArguments &arguments) {
     spv::Id firstId = arguments.instruction[2];
     spv::Id secondId = arguments.instruction[3];
 
-    assert(false);
+    usse::RegisterReference first = getOrThrow(idRegisters, firstId).reference;
+    usse::RegisterReference second = getOrThrow(idRegisters, secondId).reference;
+
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, first.type);
+
+    arguments.block.createSub(first, second, destination);
+
+    idRegisters[result] = { destination };
+}
+
+void CompilerGXP::opDot(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id firstId = arguments.instruction[2];
+    spv::Id secondId = arguments.instruction[3];
+
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, { usse::Type::Float32, 1, 1 });
+
+    usse::RegisterReference first = getOrThrow(idRegisters, firstId).reference;
+    usse::RegisterReference second = getOrThrow(idRegisters, secondId).reference;
+
+    usse::RegisterReference internal = builder.allocateRegister(
+        usse::RegisterBank::Internal, second.type);
+
+    arguments.block.createPack(second, internal);
+    arguments.block.createDot(first, internal, destination);
+
+    builder.freeRegister(internal);
+
+    idRegisters[result] = { destination };
+}
+
+void CompilerGXP::opFunctionCall(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id functionId = arguments.instruction[2];
+
+    SPIRFunction function = get<SPIRFunction>(functionId);
+
+    for (size_t a = 0; a < function.arguments.size(); a++) {
+        idRegisters[function.arguments[a].id] = getOrThrow(idRegisters, arguments.instruction[3 + a]);
+    }
+
+    createFunction(function);
+}
+
+void CompilerGXP::opExtInst(const TranslatorArguments &arguments) {
+    auto set = static_cast<SPIRExtension::Extension>(arguments.instruction[2]);
+    auto literal = static_cast<GLSLstd450>(arguments.instruction[3]);
+
+    TranslatorImplementation implementation = getOrThrow(getOrThrow(extensions, set), literal);
+
+    (this->*implementation)(arguments);
+}
+
+void CompilerGXP::extGLSLNormalize(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id sourceId = arguments.instruction[4];
+
+    usse::RegisterReference source = getOrThrow(idRegisters, sourceId).reference;
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, source.type);
+
+    usse::RegisterReference temporary = builder.allocateRegister(
+        usse::RegisterBank::Internal, source.type);
+    usse::RegisterReference magnitude = builder.allocateRegister(
+        usse::RegisterBank::Internal, { source.type.type, 1, 1 });
+
+    arguments.block.createMov(source, temporary);
+    arguments.block.createDot(temporary, temporary, magnitude);
+    arguments.block.createReverseSquareRoot(magnitude, magnitude);
+
+    magnitude.swizzle = std::vector<usse::SwizzleChannel>(source.type.components, usse::SwizzleChannel::X);
+    magnitude.lockSwizzle = true;
+    magnitude.type.components = 4;
+    arguments.block.createMul(temporary, magnitude, destination);
+
+    builder.freeRegister(magnitude);
+    builder.freeRegister(temporary);
+
+    idRegisters[result] = { destination };
+}
+
+void CompilerGXP::extGLSLFMin(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id firstId = arguments.instruction[4];
+    spv::Id secondId = arguments.instruction[5];
+
+    usse::RegisterReference first = getOrThrow(idRegisters, firstId).reference;
+    usse::RegisterReference second = getOrThrow(idRegisters, secondId).reference;
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, first.type);
+
+    arguments.block.createMin(first, second, destination);
+
+    idRegisters[result] = { destination };
+}
+
+void CompilerGXP::extGLSLFMax(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id firstId = arguments.instruction[4];
+    spv::Id secondId = arguments.instruction[5];
+
+    usse::RegisterReference first = getOrThrow(idRegisters, firstId).reference;
+    usse::RegisterReference second = getOrThrow(idRegisters, secondId).reference;
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, first.type);
+
+    arguments.block.createMax(first, second, destination);
+
+    idRegisters[result] = { destination };
 }
 
 TranslatorArguments::TranslatorArguments(
@@ -239,7 +355,7 @@ void CompilerGXP::createTranslators() {
         { static_cast<spv::Op>(9), "OpUndefined", &CompilerGXP::undefined },
         { spv::Op::OpExtension, "OpExtension", &CompilerGXP::unimplemented },
         { spv::Op::OpExtInstImport, "OpExtInstImport", &CompilerGXP::unimplemented },
-        { spv::Op::OpExtInst, "OpExtInst", &CompilerGXP::unimplemented },
+        { spv::Op::OpExtInst, "OpExtInst", &CompilerGXP::opExtInst },
         { static_cast<spv::Op>(13), "OpUndefined", &CompilerGXP::undefined },
         { spv::Op::OpMemoryModel, "OpMemoryModel", &CompilerGXP::unimplemented },
         { spv::Op::OpEntryPoint, "OpEntryPoint", &CompilerGXP::unimplemented },
@@ -284,7 +400,7 @@ void CompilerGXP::createTranslators() {
         { spv::Op::OpFunction, "OpFunction", &CompilerGXP::unimplemented },
         { spv::Op::OpFunctionParameter, "OpFunctionParameter", &CompilerGXP::unimplemented },
         { spv::Op::OpFunctionEnd, "OpFunctionEnd", &CompilerGXP::unimplemented },
-        { spv::Op::OpFunctionCall, "OpFunctionCall", &CompilerGXP::unimplemented },
+        { spv::Op::OpFunctionCall, "OpFunctionCall", &CompilerGXP::opFunctionCall },
         { static_cast<spv::Op>(58), "OpUndefined", &CompilerGXP::undefined },
         { spv::Op::OpVariable, "OpVariable", &CompilerGXP::unimplemented },
         { spv::Op::OpImageTexelPointer, "OpImageTexelPointer", &CompilerGXP::unimplemented },
@@ -358,7 +474,7 @@ void CompilerGXP::createTranslators() {
         { spv::Op::OpIAdd, "OpIAdd", &CompilerGXP::unimplemented },
         { spv::Op::OpFAdd, "OpFAdd", &CompilerGXP::unimplemented },
         { spv::Op::OpISub, "OpISub", &CompilerGXP::unimplemented },
-        { spv::Op::OpFSub, "OpFSub", &CompilerGXP::unimplemented },
+        { spv::Op::OpFSub, "OpFSub", &CompilerGXP::opFSub },
         { spv::Op::OpIMul, "OpIMul", &CompilerGXP::unimplemented },
         { spv::Op::OpFMul, "OpFMul", &CompilerGXP::unimplemented },
         { spv::Op::OpUDiv, "OpUDiv", &CompilerGXP::unimplemented },
@@ -375,7 +491,7 @@ void CompilerGXP::createTranslators() {
         { spv::Op::OpMatrixTimesVector, "OpMatrixTimesVector", &CompilerGXP::opMatrixTimesVector },
         { spv::Op::OpMatrixTimesMatrix, "OpMatrixTimesMatrix", &CompilerGXP::unimplemented },
         { spv::Op::OpOuterProduct, "OpOuterProduct", &CompilerGXP::unimplemented },
-        { spv::Op::OpDot, "OpDot", &CompilerGXP::unimplemented },
+        { spv::Op::OpDot, "OpDot", &CompilerGXP::opDot },
         { spv::Op::OpIAddCarry, "OpIAddCarry", &CompilerGXP::unimplemented },
         { spv::Op::OpISubBorrow, "OpISubBorrow", &CompilerGXP::unimplemented },
         { spv::Op::OpUMulExtended, "OpUMulExtended", &CompilerGXP::unimplemented },
@@ -631,5 +747,18 @@ void CompilerGXP::createTranslators() {
         { spv::Op::OpPtrEqual, "OpPtrEqual", &CompilerGXP::unimplemented },
         { spv::Op::OpPtrNotEqual, "OpPtrNotEqual", &CompilerGXP::unimplemented },
         { spv::Op::OpPtrDiff, "OpPtrDiff", &CompilerGXP::unimplemented },
+    };
+}
+
+void CompilerGXP::createExtensions() {
+    extensions = {
+        {
+            SPIRExtension::GLSL,
+            {
+                { GLSLstd450Normalize, &CompilerGXP::extGLSLNormalize },
+                { GLSLstd450FMin, &CompilerGXP::extGLSLFMin },
+                { GLSLstd450FMax, &CompilerGXP::extGLSLFMax },
+            }
+        }
     };
 }

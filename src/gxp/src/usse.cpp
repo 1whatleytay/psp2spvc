@@ -201,6 +201,7 @@ namespace usse {
     }
     BankLayout BankLayout::srcLayout(RegisterBank bank) {
         switch (bank) {
+        case RegisterBank::Internal:
         case RegisterBank::Temporary: return {bank, 0, 0 };
         case RegisterBank::Primary: return { bank, 0, 2 };
         case RegisterBank::Output: return { bank, 0, 1 };
@@ -268,8 +269,7 @@ namespace usse {
     }
 
     RegisterReference RegisterReference::getHalf(uint32_t half) {
-        assert(type.components % 2 == 0);
-        uint32_t width = type.components / 2;
+        uint32_t width = (type.components - 1) / 2 + 1;
 
         return getComponents(width * half, width);
     }
@@ -368,7 +368,7 @@ namespace usse {
         case RegisterBank::Primary: return "Primary";
         case RegisterBank::Output: return "Output";
         case RegisterBank::Secondary: return "Secondary";
-        case RegisterBank::Internal: return "Float Internal";
+        case RegisterBank::Internal: return "Internal";
         case RegisterBank::Special: return "Special";
         case RegisterBank::Global: return "Global";
         case RegisterBank::FloatConstant: return "Float Constant";
@@ -407,7 +407,7 @@ namespace usse {
         for (uint32_t a = 0; a < swizzleStandardSize; a++) {
             bool matches = true;
 
-            for (uint32_t b = 0; b < 4; b++) {
+            for (uint32_t b = 0; b < 3; b++) {
                 if (elements[b] != SwizzleChannel::DontCare) {
                     if (swizzleVector3[extended][a][b] != elements[b]) {
                         matches = false;

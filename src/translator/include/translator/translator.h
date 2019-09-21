@@ -44,6 +44,8 @@ class CompilerGXP : public Compiler {
     gxp::Builder builder;
 
     std::vector<TranslatorCode> codes;
+    std::unordered_map<SPIRExtension::Extension, std::unordered_map<GLSLstd450, TranslatorImplementation>> extensions;
+
     std::unordered_map<spv::Id, gxp::ProgramVarying> idVaryings;
     std::unordered_map<spv::Id, TranslatorReference> idRegisters;
     std::unordered_map<gxp::ProgramVarying, usse::RegisterReference> varyingReferences;
@@ -66,7 +68,9 @@ class CompilerGXP : public Compiler {
     void createFunction(const SPIRFunction &function);
     void createVertexShaderResources();
     void createFragmentShaderResources();
+
     void createTranslators();
+    void createExtensions();
 
     // SPRIV Translation OPs
     void unimplemented(const TranslatorArguments &arguments);
@@ -81,6 +85,14 @@ class CompilerGXP : public Compiler {
     void opAccessChain(const TranslatorArguments &arguments);
     void opVectorShuffle(const TranslatorArguments &arguments);
     void opFSub(const TranslatorArguments &arguments);
+    void opDot(const TranslatorArguments &arguments);
+    void opFunctionCall(const TranslatorArguments &arguments);
+    void opExtInst(const TranslatorArguments &arguments);
+
+    // SPIRV Extension OPs
+    void extGLSLNormalize(const TranslatorArguments &arguments);
+    void extGLSLFMin(const TranslatorArguments &arguments);
+    void extGLSLFMax(const TranslatorArguments &arguments);
 public:
 
     std::vector<uint8_t> compileData();

@@ -282,7 +282,9 @@ void CompilerGXP::createFragmentShaderResources() {
 
         SPIRType subType = get_type(type.member_types[0]);
 
-        idRegisters[uniform.id] = { { }, { createParameter(gxp::ParameterCategory::Uniform, subType, uniform.name) } };
+        TranslatorReference uniformReference = createParameter(gxp::ParameterCategory::Uniform, subType, uniform.name);
+
+        idRegisters[uniform.id] = { { }, { uniformReference } };
     }
 
     std::vector<gxp::ProgramVectorInfo> varyings;
@@ -325,16 +327,16 @@ std::vector<uint8_t> CompilerGXP::compileData() {
     SPIREntryPoint entryPoint = get_entry_point(entryPoints[0].name, entryPoints[0].execution_model);
     SPIRFunction entryFunction = get<SPIRFunction>(entryPoint.self);
 
-    // addFunction should recursively call the other functions.
-//    try {
+    try {
         createFunction(entryFunction);
-//    } catch (std::runtime_error &e) {
-//        fmt::print("{}\n", e.what());
-//    }
+    } catch (std::runtime_error &e) {
+        fmt::print("{}\n", e.what());
+    }
 
     return builder.build();
 }
 
 CompilerGXP::CompilerGXP(const std::vector<uint32_t> &data) : Compiler(data) {
     createTranslators();
+    createExtensions();
 }

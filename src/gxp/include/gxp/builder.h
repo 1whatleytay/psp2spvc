@@ -38,6 +38,21 @@ namespace gxp {
             usse::RegisterReference first,
             usse::RegisterReference second,
             usse::RegisterReference destination);
+        void createMul(
+            usse::RegisterReference first,
+            usse::RegisterReference second,
+            usse::RegisterReference destination);
+        void createReverseSquareRoot(
+            usse::RegisterReference source,
+            usse::RegisterReference destination);
+        void createMin(
+            usse::RegisterReference first,
+            usse::RegisterReference second,
+            usse::RegisterReference destination);
+        void createMax(
+            usse::RegisterReference first,
+            usse::RegisterReference second,
+            usse::RegisterReference destination);
     };
 
     class Parameter {

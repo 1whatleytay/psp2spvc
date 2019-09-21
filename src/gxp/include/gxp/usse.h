@@ -50,6 +50,24 @@ namespace usse {
         Output8,
     };
 
+    enum class InstructionVNMADOp : uint8_t {
+        Multiply,
+        Add,
+        Fractional,
+        DSX,
+        DSY,
+        Min,
+        Max,
+        Dot,
+    };
+
+    enum class InstructionVCOMPOp : uint8_t {
+        Reciprocal,
+        ReverseSquareRoot,
+        Logarithm,
+        Exponent,
+    };
+
     typedef std::array<SwizzleChannel, 3> SwizzleVec3;
     typedef std::array<SwizzleChannel, 4> SwizzleVec4;
 
