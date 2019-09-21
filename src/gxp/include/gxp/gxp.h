@@ -8,7 +8,7 @@ namespace gxp {
     // GXP\0
     constexpr uint32_t gxpMagic = 0x00505847;
 
-    enum class ParameterCategory : uint8_t{
+    enum class ParameterCategory : uint8_t {
         Attribute,
         Uniform,
         Sampler,
@@ -134,11 +134,20 @@ namespace gxp {
         uint32_t components;
     };
 
-    struct ProgramFragmentInputInfo {
-        std::uint32_t attribute_info = 0;
-        std::uint32_t resource_index = 0;
-        std::uint32_t size = 0;
-        std::uint32_t component_info = 0;
+    class ProgramFragmentInputInfo {
+    public:
+        uint32_t attributeInfo = 0;
+        uint32_t resourceIndex = 0;
+        uint32_t size = 0;
+        uint32_t componentInfo = 0;
+    };
+
+    class ProgramContainerInfo {
+    public:
+        uint16_t containerIndex;
+        uint16_t unk02;
+        uint16_t secondaryOffset;
+        uint16_t maxResourceIndex;
     };
 
     class ProgramParameterInfo {

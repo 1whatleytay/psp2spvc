@@ -8,6 +8,8 @@
 #define OFFSET_OF(parent, child) (reinterpret_cast<uintptr_t>(&parent.child) - reinterpret_cast<uintptr_t>(&parent))
 
 namespace gxp {
+    constexpr uint16_t containerIndexSA = 14;
+
     class MovRegisterData {
     public:
         uint8_t destMask = 0;
@@ -598,13 +600,13 @@ namespace gxp {
             // What the heck is going on with fragment inputs!?!?
             ProgramFragmentInputInfo input;
             input.size = (reference.size - 1) << 4u;
-            input.component_info = 0b11u << 4u; // 0b11 = Float, 0b10 = Half?
-            input.resource_index = reference.index;
+            input.componentInfo = 0b11u << 4u; // 0b11 = Float, 0b10 = Half?
+            input.resourceIndex = reference.index;
 
-            input.attribute_info |= getFragmentVaryingBits(varying.varying); // Id
-            input.attribute_info |= 0x10A000u; // 0x20000000 = Half, 0x10000000 = Fixed, 0x10A000 = Float...
-            input.attribute_info |= (reference.type.components - 1) << 22u; // Component Count
-            input.attribute_info |= 0xFu; // Not a Sampler!
+            input.attributeInfo |= getFragmentVaryingBits(varying.varying); // Id
+            input.attributeInfo |= 0x10A000u; // 0x20000000 = Half, 0x10000000 = Fixed, 0x10A000 = Float...
+            input.attributeInfo |= (reference.type.components - 1) << 22u; // Component Count
+            input.attributeInfo |= 0xFu; // Not a Sampler!
 
             // Samplers are not yet supported.
 
@@ -646,6 +648,22 @@ namespace gxp {
             stringDB.push_back(entry);
         }
 
+        // Containers
+        header.containerCount = 1;
+        header.containerOffset = data.size() - OFFSET_OF(header, containerOffset);
+        {
+            ProgramContainerInfo info = {
+                containerIndexSA, // Container Index
+                0, // ??
+                0, // Register Index
+                static_cast<uint16_t>(saRegPointer) // Register Count
+            };
+            data.insert(data.end(),
+                reinterpret_cast<uint8_t *>(&info),
+                reinterpret_cast<uint8_t *>(&info)
+                + sizeof(ProgramContainerInfo));
+        }
+
         // Parameters
         header.parameterCount = parameters.size();
         header.parametersOffset = data.size() - OFFSET_OF(header, parametersOffset);
@@ -655,7 +673,7 @@ namespace gxp {
             parameter.arraySize = param.type.arraySize;
             parameter.semantic = static_cast<uint16_t>(param.semantic);
             parameter.config = createParameterConfig(param.category, getParameterTypeFromUSSEType(param.type.type),
-                param.type.components, param.containerIndex);
+                param.type.components, containerIndexSA);
 
             auto stringEntry = std::find_if(stringDB.begin(), stringDB.end(), [param](const StringEntry &entry) {
                 return entry.text == param.name;
