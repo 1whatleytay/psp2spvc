@@ -64,6 +64,8 @@ class CompilerGXP : public Compiler {
     TranslatorReference createParameter(gxp::ParameterCategory category, const SPIRType &type,
         const std::string &name);
 
+    usse::RegisterReference getRegister(spv::Id id);
+
     void createBlock(const SPIRBlock &block);
     void createFunction(const SPIRFunction &function);
     void createVertexShaderResources();
@@ -79,11 +81,13 @@ class CompilerGXP : public Compiler {
     void opLoad(const TranslatorArguments &arguments);
     void opStore(const TranslatorArguments &arguments);
     void opMatrixTimesVector(const TranslatorArguments &arguments);
+    void opVectorTimesScalar(const TranslatorArguments &arguments);
     void opConvertUToF(const TranslatorArguments &arguments);
     void opCompositeExtract(const TranslatorArguments &arguments);
     void opCompositeConstruct(const TranslatorArguments &arguments);
     void opAccessChain(const TranslatorArguments &arguments);
     void opVectorShuffle(const TranslatorArguments &arguments);
+    void opFNegate(const TranslatorArguments &arguments);
     void opFSub(const TranslatorArguments &arguments);
     void opDot(const TranslatorArguments &arguments);
     void opFunctionCall(const TranslatorArguments &arguments);
@@ -93,6 +97,7 @@ class CompilerGXP : public Compiler {
     void extGLSLNormalize(const TranslatorArguments &arguments);
     void extGLSLFMin(const TranslatorArguments &arguments);
     void extGLSLFMax(const TranslatorArguments &arguments);
+    void extGLSLReflect(const TranslatorArguments &arguments);
 public:
 
     std::vector<uint8_t> compileData();

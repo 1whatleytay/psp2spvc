@@ -501,7 +501,7 @@ namespace gxp {
         fmt::print("Allocating {} registers of type {} (vec{}[{}]), size {} at index {}.\n",
             usse::getBankName(bank), usse::getTypeName(type.type), type.components, type.arraySize, size, index);
 
-        return usse::RegisterReference(type, bank, index, size);
+        return usse::RegisterReference(type, bank, index);
     }
 
     void Builder::freeRegister(usse::RegisterReference reg) {
@@ -622,8 +622,7 @@ namespace gxp {
         varyings.output_comp_count = components;
         varyings.output_param_type = static_cast<uint8_t>(getParameterTypeFromUSSEType(type));
 
-        return usse::RegisterReference({ type, components, 1 },
-            usse::RegisterBank::Primary, 0, usse::getTypeSize(type) * components / 4);
+        return usse::RegisterReference({ type, components, 1 }, usse::RegisterBank::Primary, 0);
     }
 
     std::vector<uint8_t> Builder::build() {

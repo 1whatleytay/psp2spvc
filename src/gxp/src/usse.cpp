@@ -316,8 +316,8 @@ namespace usse {
         return reg;
     }
 
-    RegisterReference::RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex, uint32_t size)
-        : type(type), bank(bank), size(size) {
+    RegisterReference::RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex)
+        : type(type), bank(bank), size(getTypeSize(type.type) * type.components * type.arraySize / 4) {
         bool swizzleUp = false;
         if (regIndex % 2 == 1) {
             regIndex--;

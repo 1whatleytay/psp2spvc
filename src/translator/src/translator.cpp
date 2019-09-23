@@ -327,11 +327,11 @@ std::vector<uint8_t> CompilerGXP::compileData() {
     SPIREntryPoint entryPoint = get_entry_point(entryPoints[0].name, entryPoints[0].execution_model);
     SPIRFunction entryFunction = get<SPIRFunction>(entryPoint.self);
 
-    try {
+//    try {
         createFunction(entryFunction);
-    } catch (std::runtime_error &e) {
-        fmt::print("{}\n", e.what());
-    }
+//    } catch (std::runtime_error &e) {
+//        fmt::print("{}\n", e.what());
+//    }
 
     return builder.build();
 }
