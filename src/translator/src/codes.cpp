@@ -54,7 +54,10 @@ void CompilerGXP::opStore(const TranslatorArguments &arguments) {
     usse::RegisterReference sourceRegister = getRegister(source);
     usse::RegisterReference destinationRegister = getRegister(destination);
 
-    arguments.block.createMov(sourceRegister, destinationRegister);
+    if (sourceRegister.type.components == 1)
+        arguments.block.createMov(sourceRegister, destinationRegister);
+    else
+        arguments.block.createPack(sourceRegister, destinationRegister);
 }
 
 void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
@@ -95,7 +98,7 @@ void CompilerGXP::opVectorTimesScalar(const TranslatorArguments &arguments) {
     usse::RegisterReference scalar = getRegister(scalarId);
     usse::RegisterReference destination = builder.allocateRegister(usse::RegisterBank::Temporary, vector.type);
 
-    scalar.swizzle = std::vector<usse::SwizzleChannel>(scalar.type.components, usse::SwizzleChannel::X);
+    scalar.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
     scalar.lockSwizzle = true;
     scalar.type.components = vector.type.components;
 
@@ -138,33 +141,31 @@ void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
     usse::RegisterReference output = builder.allocateRegister(usse::RegisterBank::Temporary,
         { translateType(type.basetype), type.vecsize, 1 });
 
-    for (size_t a = 0; a < type.vecsize; a++) {
-        usse::RegisterReference source;
+    for (size_t a = 0; a < type.vecsize;) {
+        spv::Id sourceId = arguments.instruction[2 + a];
+        usse::RegisterReference source = getRegister(sourceId);
 
-        spv::Id vecId = arguments.instruction[2 + a];
-
-        // This is very wrong. Rework this!
-        auto reg = idRegisters.find(vecId);
-        if (reg != idRegisters.end()) {
-            source = reg->second.reference;
-        } else if (type.basetype == SPIRType::Float) {
-            SPIRConstant spvConstant = get<SPIRConstant>(vecId);
-
-            float packConstant = spvConstant.m.c[0].r[0].f32;
-
-            // Especially here, when it returns it should try the next option or add it to literals.
-            // Continue the if case here.
-            int32_t constantIndex = usse::getFPConstantIndex(packConstant);
-            if (constantIndex != -1) {
-                source = usse::RegisterReference({ usse::Type::Float32, 1, 1 },
-                    usse::RegisterBank::FloatConstant, constantIndex);
-                source.lockSwizzle = true;
-                usse::SwizzleVec4 swizzleTemp = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
-                source.swizzle = std::vector<usse::SwizzleChannel>(swizzleTemp.begin(), swizzleTemp.end());
+        uint32_t size = 1;
+        while (a + size < type.vecsize) {
+            usse::RegisterReference next = getRegister(arguments.instruction[2 + a + size]);
+            bool matchingBanks = source.bank == next.bank;
+            bool matchingIndices = (source.index + static_cast<uint32_t>(source.swizzle[0]) + size) ==
+                (next.index + static_cast<uint32_t>(next.swizzle[0]));
+            if (matchingBanks && matchingIndices) {
+                size++;
+            } else {
+                break;
             }
         }
 
-        arguments.block.createMov(source, output.getComponents(a, 1));
+        if (size == 1)
+            arguments.block.createMov(usse::RegisterReference(
+                { source.type.type, size, 1 }, source.bank, source.index), output.getComponents(a, size));
+        else
+            arguments.block.createPack(usse::RegisterReference(
+                { source.type.type, size, 1 }, source.bank, source.index), output.getComponents(a, size));
+
+        a += size;
     }
 
     idRegisters[result] = { output };
@@ -369,13 +370,13 @@ void CompilerGXP::extGLSLNormalize(const TranslatorArguments &arguments) {
     usse::RegisterReference magnitude = builder.allocateRegister(
         usse::RegisterBank::Internal, { source.type.type, 1, 1 });
 
-    arguments.block.createMov(source, temporary);
+    arguments.block.createPack(source, temporary);
     arguments.block.createDot(temporary, temporary, magnitude);
     arguments.block.createReverseSquareRoot(magnitude, magnitude);
 
-    magnitude.swizzle = std::vector<usse::SwizzleChannel>(source.type.components, usse::SwizzleChannel::X);
+    magnitude.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
     magnitude.lockSwizzle = true;
-    magnitude.type.components = 4;
+    magnitude.type.components = source.type.components;
     arguments.block.createMul(temporary, magnitude, destination);
 
     builder.freeRegister(magnitude);
@@ -431,12 +432,12 @@ void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, second.type);
 
-    magnitude.swizzle = std::vector<usse::SwizzleChannel>(second.type.components, usse::SwizzleChannel::X);
+    magnitude.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
     magnitude.lockSwizzle = true;
 
     usse::RegisterReference two({ usse::Type::Float32, 1, 1 },
         usse::RegisterBank::FloatConstant, usse::getFPConstantIndex(2));
-    two.swizzle = std::vector<usse::SwizzleChannel>(second.type.components, usse::SwizzleChannel::X);
+    two.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
     two.lockSwizzle = true;
 
     arguments.block.createPack(second, internal);

@@ -2,6 +2,7 @@
 
 #include <gxp/usse.h>
 #include <gxp/instructions.h>
+#include <gxp/disasm.h>
 
 #include <fmt/format.h>
 
@@ -10,94 +11,94 @@
 namespace gxp {
     constexpr uint16_t containerIndexSA = 14;
 
-    class MovRegisterData {
-    public:
-        uint8_t destMask = 0;
-        int32_t swizzleIndex = 0;
-        usse::RegisterReference source;
-        usse::RegisterReference destination;
-    };
-
-    std::vector<MovRegisterData> splitRegisterF32(usse::RegisterReference source, usse::RegisterReference destination) {
-        std::vector<MovRegisterData> data;
-
-        uint32_t destMask = destination.getSwizzleMask();
-
-        for (uint32_t a = 0; a < 2; a++) {
-            uint8_t mask = (destMask & (0b11u << (a * 2))) >> (a * 2);
-
-            usse::RegisterReference sourceHalf = source.getComponents(a * 2, 2);
-            usse::RegisterReference destinationHalf = destination.getComponents(a * 2, 2);
-
-            if (mask & 0b01u) {
-                if (mask & 0b10u) {
-                    if (usse::areSwizzlesInMatchingHalf(sourceHalf.swizzle[0], sourceHalf.swizzle[1])) {
-                        data.push_back({
-                            mask,
-                            usse::getSwizzleVec4Index({
-                                sourceHalf.swizzle[0],
-                                sourceHalf.swizzle[1],
-                                usse::SwizzleChannel::DontCare,
-                                usse::SwizzleChannel::DontCare,
-                            }),
-                            source.getComponents(a * 2, 2), // is this source index right?
-                            destination.getComponents(a * 2, 2)
-                        });
-                    } else {
-                        // X and Y swizzle seperately
-                        data.push_back({
-                            0b01,
-                            usse::getSwizzleVec4Index({
-                                sourceHalf.swizzle[0],
-                                usse::SwizzleChannel::DontCare,
-                                usse::SwizzleChannel::DontCare,
-                                usse::SwizzleChannel::DontCare,
-                            }),
-                            source.getComponents(a * 2, 2), // copy both components anyway
-                            destination.getComponents(a * 2, 2)
-                        });
-                        data.push_back({
-                            0b10,
-                            usse::getSwizzleVec4Index({
-                                usse::SwizzleChannel::DontCare,
-                                sourceHalf.swizzle[1],
-                                usse::SwizzleChannel::DontCare,
-                                usse::SwizzleChannel::DontCare,
-                            }),
-                            source.getComponents(a * 2, 2), // copy both components anyway
-                            destination.getComponents(a * 2, 2)
-                        });
-                    }
-                } else {
-                    data.push_back({
-                        0b01,
-                        usse::getSwizzleVec4Index({
-                            sourceHalf.swizzle[0],
-                            usse::SwizzleChannel::DontCare,
-                            usse::SwizzleChannel::DontCare,
-                            usse::SwizzleChannel::DontCare,
-                        }),
-                        source.getComponents(a * 2, 2), // copy both components anyway
-                        destination.getComponents(a * 2, 2)
-                    });
-                }
-            } else if (mask & 0b10u) {
-                data.push_back({
-                    0b10,
-                    usse::getSwizzleVec4Index({
-                        usse::SwizzleChannel::DontCare,
-                        sourceHalf.swizzle[1],
-                        usse::SwizzleChannel::DontCare,
-                        usse::SwizzleChannel::DontCare,
-                    }),
-                    source.getComponents(a * 2, 2), // copy both components anyway
-                    destination.getComponents(a * 2, 2)
-                });
-            }
-        }
-
-        return data;
-    }
+//    class MovRegisterData {
+//    public:
+//        uint8_t destMask = 0;
+//        int32_t swizzleIndex = 0;
+//        usse::RegisterReference source;
+//        usse::RegisterReference destination;
+//    };
+//
+//    std::vector<MovRegisterData> splitRegisterF32(usse::RegisterReference source, usse::RegisterReference destination) {
+//        std::vector<MovRegisterData> data;
+//
+//        uint32_t destMask = destination.getSwizzleMask();
+//
+//        for (uint32_t a = 0; a < 2; a++) {
+//            uint8_t mask = (destMask & (0b11u << (a * 2))) >> (a * 2);
+//
+//            usse::RegisterReference sourceHalf = source.getComponents(a * 2, 2);
+//            usse::RegisterReference destinationHalf = destination.getComponents(a * 2, 2);
+//
+//            if (mask & 0b01u) {
+//                if (mask & 0b10u) {
+//                    if (usse::areSwizzlesInMatchingHalf(sourceHalf.swizzle[0], sourceHalf.swizzle[1])) {
+//                        data.push_back({
+//                            mask,
+//                            usse::getSwizzleVec4Index({
+//                                sourceHalf.swizzle[0],
+//                                sourceHalf.swizzle[1],
+//                                usse::SwizzleChannel::DontCare,
+//                                usse::SwizzleChannel::DontCare,
+//                            }),
+//                            source.getComponents(a * 2, 2), // is this source index right?
+//                            destination.getComponents(a * 2, 2)
+//                        });
+//                    } else {
+//                        // X and Y swizzle seperately
+//                        data.push_back({
+//                            0b01,
+//                            usse::getSwizzleVec4Index({
+//                                sourceHalf.swizzle[0],
+//                                usse::SwizzleChannel::DontCare,
+//                                usse::SwizzleChannel::DontCare,
+//                                usse::SwizzleChannel::DontCare,
+//                            }),
+//                            source.getComponents(a * 2, 2), // copy both components anyway
+//                            destination.getComponents(a * 2, 2)
+//                        });
+//                        data.push_back({
+//                            0b10,
+//                            usse::getSwizzleVec4Index({
+//                                usse::SwizzleChannel::DontCare,
+//                                sourceHalf.swizzle[1],
+//                                usse::SwizzleChannel::DontCare,
+//                                usse::SwizzleChannel::DontCare,
+//                            }),
+//                            source.getComponents(a * 2, 2), // copy both components anyway
+//                            destination.getComponents(a * 2, 2)
+//                        });
+//                    }
+//                } else {
+//                    data.push_back({
+//                        0b01,
+//                        usse::getSwizzleVec4Index({
+//                            sourceHalf.swizzle[0],
+//                            usse::SwizzleChannel::DontCare,
+//                            usse::SwizzleChannel::DontCare,
+//                            usse::SwizzleChannel::DontCare,
+//                        }),
+//                        source.getComponents(a * 2, 2), // copy both components anyway
+//                        destination.getComponents(a * 2, 2)
+//                    });
+//                }
+//            } else if (mask & 0b10u) {
+//                data.push_back({
+//                    0b10,
+//                    usse::getSwizzleVec4Index({
+//                        usse::SwizzleChannel::DontCare,
+//                        sourceHalf.swizzle[1],
+//                        usse::SwizzleChannel::DontCare,
+//                        usse::SwizzleChannel::DontCare,
+//                    }),
+//                    source.getComponents(a * 2, 2), // copy both components anyway
+//                    destination.getComponents(a * 2, 2)
+//                });
+//            }
+//        }
+//
+//        return data;
+//    }
 
     void Builder::setType(gxp::ShaderType type) {
         header.type = static_cast<uint8_t>(type);
@@ -108,46 +109,50 @@ namespace gxp {
     }
 
     void Block::createNop() {
+        usse::disasm::disassemble("nop", { });
         instructions.push_back(usse::makeNOP());
     }
 
-    void Block::createMov(usse::RegisterReference source, usse::RegisterReference destination) {
+    void Block::createMov(
+        usse::RegisterReference source,
+        usse::RegisterReference destination) {
         usse::BankLayout srcBankLayout = usse::BankLayout::srcLayout(source.bank);
         usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
 
-        const auto movs = splitRegisterF32(source, destination);
+        assert(source.type.components <= 2 && destination.type.components <= 2);
 
-        for (const auto &mov : movs) {
-            instructions.push_back(usse::makeVMOV(
-                0, // pred
-                0, // skipinv
-                0, // test_bit_2
-                0, // src0_comp_sel
-                0, // syncstart
-                destBankLayout.extension, // dest_bank_ext
-                0, // end_or_src0_bank_ext
-                srcBankLayout.extension, // src1_bank_ext
-                0, // src2_bank_ext
-                0, // move_type
-                0, // repeat_count
-                0, // nosched
-                static_cast<usse::Param>(destination.type.type) & 0b111u, // move_data_type
-                0, // test_bit_1
-                mov.swizzleIndex, // src0_swiz
-                0, // src0_bank_sel
-                destBankLayout.number, // dest_bank_sel
-                srcBankLayout.number, // src1_bank_sel
-                0, // src2_bank_sel
-                mov.destMask, // dest_mask
-                destBankLayout.getIndex(mov.destination), // dest_n
-                0, // src0_n
-                srcBankLayout.getIndex(mov.source), // src1_n
-                0 // src2_n
-            ));
-        }
+        fmt::print("{}\n", usse::disasm::disassemble("mov", { source }, &destination));
+        instructions.push_back(usse::makeVMOV(
+            0, // pred
+            0, // skipinv
+            0, // test_bit_2
+            0, // src0_comp_sel
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            0, // end_or_src0_bank_ext
+            srcBankLayout.extension, // src1_bank_ext
+            0, // src2_bank_ext
+            0, // move_type
+            0, // repeat_count
+            0, // nosched
+            static_cast<usse::Param>(destination.type.type) & 0b111u, // move_data_type
+            0, // test_bit_1
+            source.getSwizzleIndex(), // src0_swiz
+            0, // src0_bank_sel
+            destBankLayout.number, // dest_bank_sel
+            srcBankLayout.number, // src1_bank_sel
+            0, // src2_bank_sel
+            destination.getSwizzleMask(), // dest_mask
+            destBankLayout.getIndex(destination), // dest_n
+            0, // src0_n
+            srcBankLayout.getIndex(source), // src1_n
+            0 // src2_n
+        ));
     }
 
-    void Block::createPack(usse::RegisterReference source, usse::RegisterReference destination) {
+    void Block::createPack(
+        usse::RegisterReference source,
+        usse::RegisterReference destination) {
         usse::BankLayout srcBankLayout = usse::BankLayout::srcLayout(source.bank);
         usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
 
@@ -168,6 +173,7 @@ namespace gxp {
             2, // Output8
         };
 
+        fmt::print("{}\n", usse::disasm::disassemble("pck", { source }, &destination));
         instructions.push_back(usse::makeVPCK(
             0, // pred
             0, // skipinv
@@ -207,6 +213,7 @@ namespace gxp {
 
         assert(second.bank == usse::RegisterBank::Internal);
 
+        fmt::print("{}\n", usse::disasm::disassemble("dot", { first, second }, &destination));
         instructions.push_back(usse::makeVDP(
             0, // pred
             0, // skipinv
@@ -251,7 +258,7 @@ namespace gxp {
             shift += 3;
         }
 
-        // First/Second sources are flipped so negative effect can be applied to src1. -x + y = y - x
+        fmt::print("{}\n", usse::disasm::disassemble("add", { first, second }, &destination));
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
             0, // skipinv
@@ -294,6 +301,7 @@ namespace gxp {
         }
 
         // First/Second sources are flipped so negative effect can be applied to src1. -x + y = y - x
+        fmt::print("{}\n", usse::disasm::disassemble("sub", { first, second }, &destination));
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
             0, // skipinv
@@ -335,6 +343,7 @@ namespace gxp {
             shift += 3;
         }
 
+        fmt::print("{}\n", usse::disasm::disassemble("mul", { first, second }, &destination));
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
             0, // skipinv
@@ -380,6 +389,7 @@ namespace gxp {
             0, // Output8 - Unsupported
         };
 
+        fmt::print("{}\n", usse::disasm::disassemble("exp", { source }, &destination));
         instructions.push_back(usse::makeVCOMP(
             0, // pred
             0, // skipinv
@@ -421,6 +431,7 @@ namespace gxp {
             0, // Output8 - Unsupported
         };
 
+        fmt::print("{}\n", usse::disasm::disassemble("log", { source }, &destination));
         instructions.push_back(usse::makeVCOMP(
             0, // pred
             0, // skipinv
@@ -462,6 +473,7 @@ namespace gxp {
             0, // Output8 - Unsupported
         };
 
+        fmt::print("{}\n", usse::disasm::disassemble("rsq", { source }, &destination));
         instructions.push_back(usse::makeVCOMP(
             0, // pred
             0, // skipinv
@@ -499,6 +511,7 @@ namespace gxp {
             shift += 3;
         }
 
+        fmt::print("{}\n", usse::disasm::disassemble("min", { first, second }, &destination));
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
             0, // skipinv
@@ -540,6 +553,7 @@ namespace gxp {
             shift += 3;
         }
 
+        fmt::print("{}\n", usse::disasm::disassemble("max", { first, second }, &destination));
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
             0, // skipinv
@@ -628,8 +642,8 @@ namespace gxp {
             throw std::runtime_error("Missing allocation method for bank.");
         }
 
-        fmt::print("Allocating {} registers of type {} (vec{}[{}]), size {} at index {}.\n",
-            usse::getBankName(bank), usse::getTypeName(type.type), type.components, type.arraySize, size, index);
+//        fmt::print("Allocating {} registers of type {} (vec{}[{}]), size {} at index {}.\n",
+//            usse::getBankName(bank), usse::getTypeName(type.type), type.components, type.arraySize, size, index);
 
         return usse::RegisterReference(type, bank, index);
     }

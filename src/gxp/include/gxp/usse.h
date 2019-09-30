@@ -71,6 +71,28 @@ namespace usse {
     typedef std::array<SwizzleChannel, 3> SwizzleVec3;
     typedef std::array<SwizzleChannel, 4> SwizzleVec4;
 
+    bool areSwizzlesInMatchingHalf(SwizzleChannel x, SwizzleChannel y);
+    int32_t getFPConstantIndex(float constant);
+    int32_t getSwizzleScalarIndex(SwizzleChannel element);
+    int32_t getSwizzleVec3Index(SwizzleVec3 elements, bool extended = false);
+    int32_t getSwizzleVec4Index(SwizzleVec4 elements, bool extended = false);
+
+    inline SwizzleVec3 getSwizzleVec3All(SwizzleChannel channel) {
+        return { channel, channel, channel };
+    }
+
+    inline SwizzleVec4 getSwizzleVec4All(SwizzleChannel channel) {
+        return { channel, channel, channel, channel };
+    }
+
+    inline SwizzleVec3 getSwizzleVec3Default() {
+        return { SwizzleChannel::X, SwizzleChannel::Y, SwizzleChannel::Z };
+    }
+
+    inline SwizzleVec4 getwizzleVec4Default() {
+        return { SwizzleChannel::X, SwizzleChannel::Y, SwizzleChannel::Z, SwizzleChannel::W };
+    }
+
     class DataType {
     public:
         Type type = usse::Type::Float32;
@@ -85,7 +107,7 @@ namespace usse {
         uint32_t index = 0;
         uint32_t size = 1;
         bool lockSwizzle = false;
-        std::vector<SwizzleChannel> swizzle;
+        usse::SwizzleVec4 swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::DontCare);
 
         RegisterReference operator+(uint32_t value);
         uint32_t getSwizzleMask();
@@ -116,26 +138,4 @@ namespace usse {
     std::string getTypeName(Type type);
     uint32_t getTypeSize(Type type);
     std::string getBankName(RegisterBank bank);
-
-    bool areSwizzlesInMatchingHalf(SwizzleChannel x, SwizzleChannel y);
-    int32_t getFPConstantIndex(float constant);
-    int32_t getSwizzleScalarIndex(SwizzleChannel element);
-    int32_t getSwizzleVec3Index(SwizzleVec3 elements, bool extended = false);
-    int32_t getSwizzleVec4Index(SwizzleVec4 elements, bool extended = false);
-
-    inline SwizzleVec3 getSwizzleVec3All(SwizzleChannel channel) {
-        return { channel, channel, channel };
-    }
-
-    inline SwizzleVec4 getSwizzleVec4All(SwizzleChannel channel) {
-        return { channel, channel, channel, channel };
-    }
-
-    inline SwizzleVec3 getSwizzleVec3Default() {
-        return { SwizzleChannel::X, SwizzleChannel::Y, SwizzleChannel::Z };
-    }
-
-    inline SwizzleVec4 getwizzleVec4Default() {
-        return { SwizzleChannel::X, SwizzleChannel::Y, SwizzleChannel::Z, SwizzleChannel::W };
-    }
 }

@@ -227,7 +227,8 @@ namespace usse {
     uint32_t RegisterReference::getSwizzleMask() {
         uint32_t mask = 0;
 
-        for (SwizzleChannel channel : swizzle) {
+        for (uint32_t a = 0; a < type.components; a++) {
+            SwizzleChannel channel = swizzle[a];
             switch (channel) {
             case SwizzleChannel::X:
                 mask |= 0b0001u;
@@ -240,6 +241,8 @@ namespace usse {
                 break;
             case SwizzleChannel::W:
                 mask |= 0b1000u;
+                break;
+            case SwizzleChannel::DontCare:
                 break;
             default:
                 throw std::runtime_error("Unimplemented swizzle.");
@@ -293,12 +296,12 @@ namespace usse {
         ref.type.components = count;
         ref.type.arraySize = 1;
 
-        ref.swizzle.clear();
+        ref.swizzle = usse::getSwizzleVec4All(SwizzleChannel::DontCare);
         for (uint32_t a = 0; a < count; a++) {
             if (lockSwizzle)
-                ref.swizzle.push_back(swizzle[component + a]);
+                ref.swizzle[a] = swizzle[component + a];
             else
-                ref.swizzle.push_back(static_cast<SwizzleChannel>(component + a + swizzleOffset));
+                ref.swizzle[a] = static_cast<SwizzleChannel>(component + a + swizzleOffset);
         }
 
         return ref;
@@ -323,8 +326,9 @@ namespace usse {
             regIndex--;
             swizzleUp = true;
         }
+
         for (uint32_t a = 0; a < type.components; a++) {
-            swizzle.push_back(static_cast<usse::SwizzleChannel>(a + swizzleUp));
+            swizzle[a] = static_cast<usse::SwizzleChannel>(a + swizzleUp);
         }
         index = regIndex;
     }
@@ -420,8 +424,7 @@ namespace usse {
                 return a;
         }
 
-
-        return -1;
+        throw std::runtime_error("Missing swizzle index for vec3.");
     }
     int32_t getSwizzleVec4Index(std::array<SwizzleChannel, 4> elements, bool extended) {
         for (uint32_t a = 0; a < swizzleStandardSize; a++) {
@@ -440,6 +443,6 @@ namespace usse {
                 return a;
         }
 
-        return -1;
+        throw std::runtime_error("Missing swizzle index for vec4.");
     }
 }
