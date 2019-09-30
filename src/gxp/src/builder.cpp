@@ -236,6 +236,48 @@ namespace gxp {
             ));
     }
 
+    void Block::createAdd(
+        usse::RegisterReference first,
+        usse::RegisterReference second,
+        usse::RegisterReference destination) {
+        usse::BankLayout firstBankLayout = usse::BankLayout::srcLayout(first.bank);
+        usse::BankLayout secondBankLayout = usse::BankLayout::srcLayout(second.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        uint32_t shift = 0;
+        uint32_t firstSwizzle = 0;
+        for (usse::SwizzleChannel channel : first.swizzle) {
+            firstSwizzle |= static_cast<uint32_t>(channel) << shift;
+            shift += 3;
+        }
+
+        // First/Second sources are flipped so negative effect can be applied to src1. -x + y = y - x
+        instructions.push_back(usse::makeVNMAD32(
+            0, // pred
+            0, // skipinv
+            (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
+            secondBankLayout.extension, // src1_bank_ext
+            firstBankLayout.extension, // src2_bank_ext
+            second.getSwizzleIndex(), // src2_swiz
+            0, // nosched
+            destination.getSwizzleMask(), // dest_mask
+            0b00, // src1_mod
+            0b0, // src2_mod
+            (firstSwizzle >> 7u) & 0b11u, // src1_swiz_7_8
+            destBankLayout.number, // dest_bank_sel
+            secondBankLayout.number, // src1_bank_sel
+            firstBankLayout.number, // src2_bank_sel
+            destBankLayout.getIndex(destination), // dest_n
+            (firstSwizzle >> 0u) & 0b1111111u, // src1_swiz_0_6
+            static_cast<usse::Param>(usse::InstructionVNMADOp::Add), // op2
+            secondBankLayout.getIndex(second), // src1_n
+            firstBankLayout.getIndex(first) // src2_n
+        ));
+    }
+
     void Block::createSub(
         usse::RegisterReference first,
         usse::RegisterReference second,
@@ -316,6 +358,88 @@ namespace gxp {
             static_cast<usse::Param>(usse::InstructionVNMADOp::Multiply), // op2
             firstBankLayout.getIndex(first), // src1_n
             secondBankLayout.getIndex(second) // src2_n
+        ));
+    }
+
+    void Block::createExp(
+        usse::RegisterReference source,
+        usse::RegisterReference destination) {
+        usse::BankLayout srcBankLayout = usse::BankLayout::srcLayout(source.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        usse::Param typeTable[] = {
+            0, // Signed8 - Unsupported
+            0, // Signed16 - Unsupported
+            0, // Signed32 - Unsupported
+            2, // Fixed10
+            1, // Float16
+            0, // Float32
+            0, // Unsigned8 - Unsupported
+            0, // Unsigned16 - Unsupported
+            0, // Unsigned32 - Unsupported
+            0, // Output8 - Unsupported
+        };
+
+        instructions.push_back(usse::makeVCOMP(
+            0, // pred
+            0, // skipinv
+            typeTable[static_cast<uint32_t>(destination.type.type)], // dest_type
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            0, // end
+            srcBankLayout.extension, // src1_bank_ext
+            0, // repeat_count
+            0, // nosched
+            static_cast<usse::Param>(usse::InstructionVCOMPOp::Exponent), // op2
+            typeTable[static_cast<uint32_t>(source.type.type)], // src_type
+            0b00, // src1_mod
+            static_cast<usse::Param>(source.swizzle[0]), // src_comp
+            destBankLayout.number, // dest_bank
+            srcBankLayout.number, // src1_bank
+            destBankLayout.getIndex(destination), // dest_n
+            srcBankLayout.getIndex(source), // src1_n
+            destination.getSwizzleMask() // write_mask
+        ));
+    }
+
+    void Block::createLog(
+        usse::RegisterReference source,
+        usse::RegisterReference destination) {
+        usse::BankLayout srcBankLayout = usse::BankLayout::srcLayout(source.bank);
+        usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
+
+        usse::Param typeTable[] = {
+            0, // Signed8 - Unsupported
+            0, // Signed16 - Unsupported
+            0, // Signed32 - Unsupported
+            2, // Fixed10
+            1, // Float16
+            0, // Float32
+            0, // Unsigned8 - Unsupported
+            0, // Unsigned16 - Unsupported
+            0, // Unsigned32 - Unsupported
+            0, // Output8 - Unsupported
+        };
+
+        instructions.push_back(usse::makeVCOMP(
+            0, // pred
+            0, // skipinv
+            typeTable[static_cast<uint32_t>(destination.type.type)], // dest_type
+            0, // syncstart
+            destBankLayout.extension, // dest_bank_ext
+            0, // end
+            srcBankLayout.extension, // src1_bank_ext
+            0, // repeat_count
+            0, // nosched
+            static_cast<usse::Param>(usse::InstructionVCOMPOp::Logarithm), // op2
+            typeTable[static_cast<uint32_t>(source.type.type)], // src_type
+            0b00, // src1_mod
+            static_cast<usse::Param>(source.swizzle[0]), // src_comp
+            destBankLayout.number, // dest_bank
+            srcBankLayout.number, // src1_bank
+            destBankLayout.getIndex(destination), // dest_n
+            srcBankLayout.getIndex(source), // src1_n
+            destination.getSwizzleMask() // write_mask
         ));
     }
 
@@ -457,16 +581,22 @@ namespace gxp {
 
     Block *Builder::createPrimaryBlock() {
         size_t index = primaryBlocks.size();
-        primaryBlocks.push_back(Block(*this));
+        primaryBlocks.push_back(std::unique_ptr<Block>(new Block(*this)));
 
-        return &primaryBlocks[index];
+        return primaryBlocks[index].get();
     }
 
     Block *Builder::createSecondaryBlock() {
         size_t index = secondaryBlocks.size();
-        secondaryBlocks.push_back(Block(*this));
+        secondaryBlocks.push_back(std::unique_ptr<Block>(new Block(*this)));
 
-        return &secondaryBlocks[index];
+        return secondaryBlocks[index].get();
+    }
+
+    // Odd index can only reference vec3 (.yzw?)
+    // For vec4, index must be even.
+    static bool needsAllocOffset(uint32_t index, uint32_t size) {
+        return size == 4 && index % 2 == 1;
     }
 
     usse::RegisterReference Builder::allocateRegister(usse::RegisterBank bank, usse::DataType type) {
@@ -475,24 +605,24 @@ namespace gxp {
 
         switch (bank) {
         case usse::RegisterBank::Primary:
-            index = paRegPointer;
-            paRegPointer += size;
+            index = paRegPointer + needsAllocOffset(paRegPointer, size);
+            paRegPointer += size + needsAllocOffset(paRegPointer, size);
             break;
         case usse::RegisterBank::Secondary:
-            index = saRegPointer;
-            saRegPointer += size;
+            index = saRegPointer + needsAllocOffset(saRegPointer, size);
+            saRegPointer += size + needsAllocOffset(saRegPointer, size);
             break;
         case usse::RegisterBank::Output:
-            index = oRegPointer;
-            oRegPointer += size;
+            index = oRegPointer + needsAllocOffset(oRegPointer, size);
+            oRegPointer += size + needsAllocOffset(oRegPointer, size);
             break;
         case usse::RegisterBank::Temporary:
-            index = tRegPointer;
-            tRegPointer += size;
+            index = tRegPointer + needsAllocOffset(tRegPointer, size);
+            tRegPointer += size + needsAllocOffset(tRegPointer, size);
             break;
         case usse::RegisterBank::Internal:
-            index = iRegPointer;
-            iRegPointer += size;
+            index = iRegPointer + needsAllocOffset(iRegPointer, size);
+            iRegPointer += size + needsAllocOffset(iRegPointer, size);
             break;
         default:
             throw std::runtime_error("Missing allocation method for bank.");
@@ -521,7 +651,7 @@ namespace gxp {
         return reg;
     }
 
-    std::unordered_map<ProgramVarying, usse::RegisterReference> Builder::registerVertexVaryings(
+    std::map<ProgramVarying, usse::RegisterReference> Builder::registerVertexVaryings(
         const std::vector<ProgramVarying> &outputs, const std::vector<ProgramVectorInfo> &texCoords) {
         varyings.varyings_count = outputs.size() + texCoords.size();
 
@@ -549,7 +679,7 @@ namespace gxp {
             varyings.vertex_outputs2 |= texCoordBits << (texCoordIndex * 3u);
         }
 
-        std::unordered_map<ProgramVarying, usse::RegisterReference> references;
+        std::map<ProgramVarying, usse::RegisterReference> references;
 
         for (auto a = static_cast<uint32_t>(ProgramVarying::Position);
             a < static_cast<uint32_t>(ProgramVarying::TexCoord0); a++) {
@@ -589,9 +719,9 @@ namespace gxp {
         return references;
     }
 
-    std::unordered_map<ProgramVarying, usse::RegisterReference> Builder::registerFragmentVaryings(
+    std::map<ProgramVarying, usse::RegisterReference> Builder::registerFragmentVaryings(
         const std::vector<ProgramVectorInfo> &inputs) {
-        std::unordered_map<ProgramVarying, usse::RegisterReference> references;
+        std::map<ProgramVarying, usse::RegisterReference> references;
 
         for (ProgramVectorInfo varying : inputs) {
             usse::DataType type = {usse::Type::Float32, varying.components, 1 };
@@ -705,11 +835,11 @@ namespace gxp {
         header.tempRegCount2 = tRegPointer; // Difference between both reg counts?
         {
             header.secondaryProgramOffset = data.size() - OFFSET_OF(header, secondaryProgramOffset);
-            for (const Block &block : secondaryBlocks) {
+            for (const std::unique_ptr<Block> &block : secondaryBlocks) {
                 data.insert(data.end(),
-                    reinterpret_cast<const uint8_t *>(block.instructions.data()),
-                    reinterpret_cast<const uint8_t *>(block.instructions.data())
-                    + block.instructions.size() * sizeof(usse::Instruction));
+                    reinterpret_cast<const uint8_t *>(block->instructions.data()),
+                    reinterpret_cast<const uint8_t *>(block->instructions.data())
+                    + block->instructions.size() * sizeof(usse::Instruction));
             }
             header.secondaryProgramOffsetEnd = data.size() - OFFSET_OF(header, secondaryProgramOffsetEnd);
 
@@ -730,18 +860,18 @@ namespace gxp {
                 0, // exe_addr_high
                 0, // src1_n_or_exe_addr_mid
                 0 // src2_n_or_exe_addr_low
-                );
+            );
             data.insert(data.end(),
                 reinterpret_cast<uint8_t *>(&phase),
                 reinterpret_cast<uint8_t *>(&phase) + sizeof(phase));
 
             header.primaryProgramInstructionCount++;
-            for (const Block &block : primaryBlocks) {
-                header.primaryProgramInstructionCount += block.instructions.size();
+            for (const std::unique_ptr<Block> &block : primaryBlocks) {
+                header.primaryProgramInstructionCount += block->instructions.size();
                 data.insert(data.end(),
-                            reinterpret_cast<const uint8_t *>(block.instructions.data()),
-                            reinterpret_cast<const uint8_t *>(block.instructions.data())
-                            + block.instructions.size() * sizeof(usse::Instruction));
+                            reinterpret_cast<const uint8_t *>(block->instructions.data()),
+                            reinterpret_cast<const uint8_t *>(block->instructions.data())
+                            + block->instructions.size() * sizeof(usse::Instruction));
             }
 
             usse::BankLayout emitLayout = usse::BankLayout::srcLayout(usse::RegisterBank::Immediate);
@@ -766,7 +896,7 @@ namespace gxp {
                 0, // src0_n
                 0, // src1_n
                 0 // src2_n
-                );
+            );
             data.insert(data.end(),
                 reinterpret_cast<uint8_t *>(&emit),
                 reinterpret_cast<uint8_t *>(&emit) + sizeof(emit));

@@ -153,7 +153,7 @@ TranslatorReference CompilerGXP::createParameter(gxp::ParameterCategory category
     }
 }
 
-void CompilerGXP::createBlock(const SPIRBlock &block) {
+spv::Id CompilerGXP::createBlock(const SPIRBlock &block) {
     gxp::Block *gxpBlock = builder.createPrimaryBlock();
 
     for (Instruction instruction : block.ops) {
@@ -168,19 +168,30 @@ void CompilerGXP::createBlock(const SPIRBlock &block) {
 
         (this->*code.implementation)(arguments);
     }
+
+    if (block.terminator == SPIRBlock::Return)
+        return block.return_value;
+
+    return 0;
 }
 
-void CompilerGXP::createFunction(const SPIRFunction &function) {
+spv::Id CompilerGXP::createFunction(const SPIRFunction &function) {
     for (uint32_t local : function.local_variables) {
         SPIRType type = get_type_from_variable(local);
 
         idRegisters[local] = createVariable(usse::RegisterBank::Temporary, type);
     }
 
+    spv::Id out = 0;
+
     for (uint32_t blockId : function.blocks) {
         auto &block = get<SPIRBlock>(blockId);
-        createBlock(block);
+        spv::Id temp = createBlock(block);
+        if (temp != 0)
+            out = temp;
     }
+
+    return out;
 }
 
 void CompilerGXP::createVertexShaderResources() {

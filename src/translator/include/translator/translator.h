@@ -3,7 +3,7 @@
 #include <util/spirv.h>
 #include <gxp/builder.h>
 
-#include <unordered_map>
+#include <map>
 
 namespace gxp { class Block; }
 class CompilerGXP;
@@ -19,7 +19,7 @@ public:
 };
 
 class TranslatorArguments {
-    TranslatorArguments(
+    explicit TranslatorArguments(
         gxp::Block &block,
         const TranslatorCode &code,
         const uint32_t *instruction,
@@ -44,11 +44,11 @@ class CompilerGXP : public Compiler {
     gxp::Builder builder;
 
     std::vector<TranslatorCode> codes;
-    std::unordered_map<SPIRExtension::Extension, std::unordered_map<GLSLstd450, TranslatorImplementation>> extensions;
+    std::map<SPIRExtension::Extension, std::unordered_map<GLSLstd450, TranslatorImplementation>> extensions;
 
-    std::unordered_map<spv::Id, gxp::ProgramVarying> idVaryings;
-    std::unordered_map<spv::Id, TranslatorReference> idRegisters;
-    std::unordered_map<gxp::ProgramVarying, usse::RegisterReference> varyingReferences;
+    std::map<spv::Id, gxp::ProgramVarying> idVaryings;
+    std::map<spv::Id, TranslatorReference> idRegisters;
+    std::map<gxp::ProgramVarying, usse::RegisterReference> varyingReferences;
 
     static usse::Type translateType(SPIRType::BaseType baseType);
     static usse::DataType translateType(const SPIRType &type);
@@ -66,8 +66,8 @@ class CompilerGXP : public Compiler {
 
     usse::RegisterReference getRegister(spv::Id id);
 
-    void createBlock(const SPIRBlock &block);
-    void createFunction(const SPIRFunction &function);
+    spv::Id createBlock(const SPIRBlock &block);
+    spv::Id createFunction(const SPIRFunction &function);
     void createVertexShaderResources();
     void createFragmentShaderResources();
 
@@ -88,7 +88,9 @@ class CompilerGXP : public Compiler {
     void opAccessChain(const TranslatorArguments &arguments);
     void opVectorShuffle(const TranslatorArguments &arguments);
     void opFNegate(const TranslatorArguments &arguments);
+    void opFAdd(const TranslatorArguments &arguments);
     void opFSub(const TranslatorArguments &arguments);
+    void opFMul(const TranslatorArguments &arguments);
     void opDot(const TranslatorArguments &arguments);
     void opFunctionCall(const TranslatorArguments &arguments);
     void opExtInst(const TranslatorArguments &arguments);
@@ -98,6 +100,7 @@ class CompilerGXP : public Compiler {
     void extGLSLFMin(const TranslatorArguments &arguments);
     void extGLSLFMax(const TranslatorArguments &arguments);
     void extGLSLReflect(const TranslatorArguments &arguments);
+    void extGLSLPow(const TranslatorArguments &arguments);
 public:
 
     std::vector<uint8_t> compileData();

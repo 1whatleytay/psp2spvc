@@ -121,14 +121,12 @@ void CompilerGXP::opConvertUToF(const TranslatorArguments &arguments) {
 void CompilerGXP::opCompositeExtract(const TranslatorArguments &arguments) {
     spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
-    spv::Id source = arguments.instruction[2];
+    spv::Id sourceId = arguments.instruction[2];
     uint32_t index = arguments.instruction[3];
 
-    auto reg = idRegisters.find(source);
-    if (reg == idRegisters.end())
-        throw std::runtime_error(fmt::format("Source ID {} was not loaded with a register reference.", source));
+    usse::RegisterReference source = getRegister(sourceId);
 
-    idRegisters[result] = { reg->second.reference.getComponents(index, 1) };
+    idRegisters[result] = { source.getComponents(index, 1) };
 }
 
 void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
@@ -258,6 +256,23 @@ void CompilerGXP::opFNegate(const TranslatorArguments &arguments) {
     idRegisters[result] = { destination };
 }
 
+void CompilerGXP::opFAdd(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id firstId = arguments.instruction[2];
+    spv::Id secondId = arguments.instruction[3];
+
+    usse::RegisterReference first = getRegister(firstId);
+    usse::RegisterReference second = getRegister(secondId);
+
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, first.type);
+
+    arguments.block.createAdd(first, second, destination);
+
+    idRegisters[result] = { destination };
+}
+
 void CompilerGXP::opFSub(const TranslatorArguments &arguments) {
     spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
@@ -271,6 +286,23 @@ void CompilerGXP::opFSub(const TranslatorArguments &arguments) {
         usse::RegisterBank::Temporary, first.type);
 
     arguments.block.createSub(first, second, destination);
+
+    idRegisters[result] = { destination };
+}
+
+void CompilerGXP::opFMul(const TranslatorArguments &arguments) {
+    spv::Id typeId = arguments.instruction[0];
+    spv::Id result = arguments.instruction[1];
+    spv::Id firstId = arguments.instruction[2];
+    spv::Id secondId = arguments.instruction[3];
+
+    usse::RegisterReference first = getRegister(firstId);
+    usse::RegisterReference second = getRegister(secondId);
+
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, first.type);
+
+    arguments.block.createMul(first, second, destination);
 
     idRegisters[result] = { destination };
 }
@@ -309,7 +341,9 @@ void CompilerGXP::opFunctionCall(const TranslatorArguments &arguments) {
         idRegisters[function.arguments[a].id] = { getRegister(arguments.instruction[3 + a]) };
     }
 
-    createFunction(function);
+    spv::Id returnValue = createFunction(function);
+    if (returnValue != 0)
+        idRegisters[result] = { getRegister(returnValue) };
 }
 
 void CompilerGXP::opExtInst(const TranslatorArguments &arguments) {
@@ -390,7 +424,52 @@ void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
     usse::RegisterReference first = getRegister(firstId);
     usse::RegisterReference second = getRegister(secondId);
 
-    assert(false);
+    usse::RegisterReference internal = builder.allocateRegister(
+        usse::RegisterBank::Internal, second.type);
+    usse::RegisterReference magnitude = builder.allocateRegister(
+        usse::RegisterBank::Internal, { usse::Type::Float32, 1, 1 });
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, second.type);
+
+    magnitude.swizzle = std::vector<usse::SwizzleChannel>(second.type.components, usse::SwizzleChannel::X);
+    magnitude.lockSwizzle = true;
+
+    usse::RegisterReference two({ usse::Type::Float32, 1, 1 },
+        usse::RegisterBank::FloatConstant, usse::getFPConstantIndex(2));
+    two.swizzle = std::vector<usse::SwizzleChannel>(second.type.components, usse::SwizzleChannel::X);
+    two.lockSwizzle = true;
+
+    arguments.block.createPack(second, internal);
+    arguments.block.createDot(first, internal, magnitude);
+    arguments.block.createMul(two, magnitude, magnitude);
+    arguments.block.createMul(magnitude, first, destination);
+    arguments.block.createSub(internal, destination, destination);
+
+    builder.freeRegister(magnitude);
+    builder.freeRegister(internal);
+
+    idRegisters[result] = { destination };
+}
+
+void CompilerGXP::extGLSLPow(const TranslatorArguments &arguments) {
+    spv::Id result = arguments.instruction[1];
+    spv::Id firstId = arguments.instruction[4];
+    spv::Id secondId = arguments.instruction[5];
+
+    usse::RegisterReference first = getRegister(firstId);
+    usse::RegisterReference second = getRegister(secondId);
+
+    usse::RegisterReference destination = builder.allocateRegister(
+        usse::RegisterBank::Temporary, { usse::Type::Float32, 1, 1 });
+
+    // Thank you xyz for doing my math homework.
+    // e^(b*log(a))
+
+    arguments.block.createLog(first, destination);
+    arguments.block.createMul(destination, second, destination);
+    arguments.block.createExp(destination, destination);
+
+    idRegisters[result] = { destination };
 }
 
 TranslatorArguments::TranslatorArguments(
@@ -536,11 +615,11 @@ void CompilerGXP::createTranslators() {
         { spv::Op::OpSNegate, "OpSNegate", &CompilerGXP::unimplemented },
         { spv::Op::OpFNegate, "OpFNegate", &CompilerGXP::opFNegate },
         { spv::Op::OpIAdd, "OpIAdd", &CompilerGXP::unimplemented },
-        { spv::Op::OpFAdd, "OpFAdd", &CompilerGXP::unimplemented },
+        { spv::Op::OpFAdd, "OpFAdd", &CompilerGXP::opFAdd },
         { spv::Op::OpISub, "OpISub", &CompilerGXP::unimplemented },
         { spv::Op::OpFSub, "OpFSub", &CompilerGXP::opFSub },
         { spv::Op::OpIMul, "OpIMul", &CompilerGXP::unimplemented },
-        { spv::Op::OpFMul, "OpFMul", &CompilerGXP::unimplemented },
+        { spv::Op::OpFMul, "OpFMul", &CompilerGXP::opFMul },
         { spv::Op::OpUDiv, "OpUDiv", &CompilerGXP::unimplemented },
         { spv::Op::OpSDiv, "OpSDiv", &CompilerGXP::unimplemented },
         { spv::Op::OpFDiv, "OpFDiv", &CompilerGXP::unimplemented },
@@ -822,7 +901,8 @@ void CompilerGXP::createExtensions() {
                 { GLSLstd450Normalize, &CompilerGXP::extGLSLNormalize },
                 { GLSLstd450FMin, &CompilerGXP::extGLSLFMin },
                 { GLSLstd450FMax, &CompilerGXP::extGLSLFMax },
-                { GLSLstd450Reflect, &CompilerGXP::extGLSLReflect }
+                { GLSLstd450Reflect, &CompilerGXP::extGLSLReflect },
+                { GLSLstd450Pow, &CompilerGXP::extGLSLPow }
             }
         }
     };

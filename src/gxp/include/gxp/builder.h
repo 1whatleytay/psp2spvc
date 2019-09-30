@@ -2,8 +2,8 @@
 
 #include <gxp/gxp.h>
 
+#include <map>
 #include <string>
-#include <unordered_map>
 
 namespace gxp {
     typedef uint64_t Instruction;
@@ -34,6 +34,10 @@ namespace gxp {
             usse::RegisterReference first,
             usse::RegisterReference second,
             usse::RegisterReference destination);
+        void createAdd(
+            usse::RegisterReference first,
+            usse::RegisterReference second,
+            usse::RegisterReference destination);
         void createSub(
             usse::RegisterReference first,
             usse::RegisterReference second,
@@ -41,6 +45,12 @@ namespace gxp {
         void createMul(
             usse::RegisterReference first,
             usse::RegisterReference second,
+            usse::RegisterReference destination);
+        void createExp(
+            usse::RegisterReference source,
+            usse::RegisterReference destination);
+        void createLog(
+            usse::RegisterReference source,
             usse::RegisterReference destination);
         void createReverseSquareRoot(
             usse::RegisterReference source,
@@ -80,8 +90,8 @@ namespace gxp {
         uint32_t tRegPointer = 0;
         uint32_t iRegPointer = 0;
 
-        std::vector<Block> primaryBlocks;
-        std::vector<Block> secondaryBlocks;
+        std::vector<std::unique_ptr<Block>> primaryBlocks;
+        std::vector<std::unique_ptr<Block>> secondaryBlocks;
         std::vector<Parameter> parameters;
         std::vector<ProgramFragmentInputInfo> fragmentInputs;
     public:
@@ -96,9 +106,9 @@ namespace gxp {
 
         usse::RegisterReference registerParameter(const Parameter &parameter);
 
-        std::unordered_map<ProgramVarying, usse::RegisterReference> registerVertexVaryings(
+        std::map<ProgramVarying, usse::RegisterReference> registerVertexVaryings(
             const std::vector<ProgramVarying> &outputs, const std::vector<ProgramVectorInfo> &texCoords);
-        std::unordered_map<ProgramVarying, usse::RegisterReference> registerFragmentVaryings(
+        std::map<ProgramVarying, usse::RegisterReference> registerFragmentVaryings(
             const std::vector<ProgramVectorInfo> &inputs /*, samplers...*/);
 
         usse::RegisterReference createFragmentOutput(usse::Type type, uint32_t components);
