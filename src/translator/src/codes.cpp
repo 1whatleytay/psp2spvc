@@ -374,10 +374,7 @@ void CompilerGXP::extGLSLNormalize(const TranslatorArguments &arguments) {
     arguments.block.createDot(temporary, temporary, magnitude);
     arguments.block.createReverseSquareRoot(magnitude, magnitude);
 
-    magnitude.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
-    magnitude.lockSwizzle = true;
-    magnitude.type.components = source.type.components;
-    arguments.block.createMul(temporary, magnitude, destination);
+    arguments.block.createMul(temporary, magnitude.getExpanded(source.type.components), destination);
 
     builder.freeRegister(magnitude);
     builder.freeRegister(temporary);
@@ -428,17 +425,13 @@ void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
     usse::RegisterReference internal = builder.allocateRegister(
         usse::RegisterBank::Internal, second.type);
     usse::RegisterReference magnitude = builder.allocateRegister(
-        usse::RegisterBank::Internal, { usse::Type::Float32, 1, 1 });
+        usse::RegisterBank::Internal, { usse::Type::Float32, 1, 1 })
+            .getExpanded(second.type.components);
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, second.type);
 
-    magnitude.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
-    magnitude.lockSwizzle = true;
-
-    usse::RegisterReference two({ usse::Type::Float32, 1, 1 },
-        usse::RegisterBank::FloatConstant, usse::getFPConstantIndex(2));
-    two.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
-    two.lockSwizzle = true;
+    usse::RegisterReference two = usse::RegisterReference({ usse::Type::Float32, 1, 1 },
+        usse::RegisterBank::FloatConstant, usse::getFPConstantIndex(2)).getExpanded(1);
 
     arguments.block.createPack(second, internal);
     arguments.block.createDot(first, internal, magnitude);
@@ -463,7 +456,7 @@ void CompilerGXP::extGLSLPow(const TranslatorArguments &arguments) {
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, { usse::Type::Float32, 1, 1 });
 
-    // Thank you xyz for doing my math homework.
+    // Thank you xyz for fixing my Vita related problem.
     // e^(b*log(a))
 
     arguments.block.createLog(first, destination);

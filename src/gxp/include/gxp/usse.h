@@ -109,12 +109,13 @@ namespace usse {
         bool lockSwizzle = false;
         usse::SwizzleVec4 swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::DontCare);
 
-        RegisterReference operator+(uint32_t value);
         uint32_t getSwizzleMask();
         int32_t getSwizzleIndex(bool extended = false);
+        uint32_t getEffectiveIndex();
         RegisterReference getHalf(uint32_t half);
         RegisterReference getComponents(uint32_t component, uint32_t count);
         RegisterReference getElement(uint32_t element);
+        RegisterReference getExpanded(uint32_t count);
 
         RegisterReference() = default;
         RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex);

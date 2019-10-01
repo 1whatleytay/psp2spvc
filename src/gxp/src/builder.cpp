@@ -235,7 +235,7 @@ namespace gxp {
             second.index, // gpi0_n
             destBankLayout.getIndex(destination), // dest_n
             second.getSwizzleIndex(), // gpi0_swiz
-            first.swizzle.size() > 3 ? static_cast<usse::Param>(first.swizzle[3]) : 0, // src1_swiz_w
+            first.type.components > 3 ? static_cast<usse::Param>(first.swizzle[3]) : 0, // src1_swiz_w
             static_cast<usse::Param>(first.swizzle[2]), // src1_swiz_z
             static_cast<usse::Param>(first.swizzle[1]), // src1_swiz_y
             static_cast<usse::Param>(first.swizzle[0]), // src1_swiz_x
@@ -637,20 +637,23 @@ namespace gxp {
         case usse::RegisterBank::Internal:
             index = iRegPointer + needsAllocOffset(iRegPointer, size);
             iRegPointer += size + needsAllocOffset(iRegPointer, size);
+            assert(iRegPointer <= 8);
             break;
         default:
             throw std::runtime_error("Missing allocation method for bank.");
         }
 
-//        fmt::print("Allocating {} registers of type {} (vec{}[{}]), size {} at index {}.\n",
-//            usse::getBankName(bank), usse::getTypeName(type.type), type.components, type.arraySize, size, index);
+        fmt::print("Allocating {} registers of type {} (vec{}[{}]), size {} at index {}.\n",
+            usse::getBankName(bank), usse::getTypeName(type.type), type.components, type.arraySize, size, index);
 
         return usse::RegisterReference(type, bank, index);
     }
 
     void Builder::freeRegister(usse::RegisterReference reg) {
-        if (reg.bank == usse::RegisterBank::Internal && reg.index + reg.size == iRegPointer) {
+        if (reg.bank == usse::RegisterBank::Internal && reg.getEffectiveIndex() + reg.size == iRegPointer) {
             iRegPointer -= reg.size;
+        } else {
+            assert(false);
         }
     }
 

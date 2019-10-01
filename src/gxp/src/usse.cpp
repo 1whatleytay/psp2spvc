@@ -216,14 +216,6 @@ namespace usse {
         }
     }
 
-    usse::RegisterReference RegisterReference::operator+(uint32_t value) {
-        usse::RegisterReference ref = *this;
-
-        ref.index += value;
-
-        return ref;
-    }
-
     uint32_t RegisterReference::getSwizzleMask() {
         uint32_t mask = 0;
 
@@ -271,50 +263,58 @@ namespace usse {
         }
     }
 
+    uint32_t RegisterReference::getEffectiveIndex() {
+        return index + static_cast<uint32_t>(swizzle[0]);
+    }
+
     RegisterReference RegisterReference::getHalf(uint32_t half) {
         uint32_t width = (type.components - 1) / 2 + 1;
 
         return getComponents(width * half, width);
     }
 
-    usse::RegisterReference RegisterReference::getComponents(uint32_t component, uint32_t count) {
-//        if (component + count > type.components)
-//            throw std::runtime_error(fmt::format(
-//                "Tried to get component {} (size: {}) on a register with only {} components.",
-//                component, count, type.components));
-        // Other restrictions, can't do size > 2, can't do .yz swizzle...
-
-        usse::RegisterReference ref = *this;
+    RegisterReference RegisterReference::getComponents(uint32_t component, uint32_t count) {
+        RegisterReference reg = *this;
 
         int32_t swizzleOffset = 0;
 
         if (component >= 2) {
-            ref.index += 2;
+            reg.index += 2;
             swizzleOffset = -2;
         }
 
-        ref.type.components = count;
-        ref.type.arraySize = 1;
+        reg.type.components = count;
+        reg.type.arraySize = 1;
 
-        ref.swizzle = usse::getSwizzleVec4All(SwizzleChannel::DontCare);
+        reg.swizzle = usse::getSwizzleVec4All(SwizzleChannel::DontCare);
         for (uint32_t a = 0; a < count; a++) {
             if (lockSwizzle)
-                ref.swizzle[a] = swizzle[component + a];
+                reg.swizzle[a] = swizzle[component + a];
             else
-                ref.swizzle[a] = static_cast<SwizzleChannel>(component + a + swizzleOffset);
+                reg.swizzle[a] = static_cast<SwizzleChannel>(component + a + swizzleOffset);
         }
 
-        return ref;
+        return reg;
     }
 
     RegisterReference RegisterReference::getElement(uint32_t element) {
         if (element >= type.arraySize)
             throw std::runtime_error("Register reference array out of bounds.");
-        usse::RegisterReference reg = *this;
+        RegisterReference reg = *this;
 
         reg.type.arraySize = 1;
         reg.size = size / type.arraySize;
         reg.index += reg.size * element;
+
+        return reg;
+    }
+
+    RegisterReference RegisterReference::getExpanded(uint32_t count) {
+        RegisterReference reg = *this;
+
+        reg.lockSwizzle = true;
+        reg.swizzle = usse::getSwizzleVec4All(swizzle[0]);
+        reg.type.components = count;
 
         return reg;
     }
