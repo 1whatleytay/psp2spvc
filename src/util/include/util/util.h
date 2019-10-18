@@ -1,11 +1,16 @@
 #pragma once
 
+#include <fmt/format.h>
+
 #include <vector>
 #include <fstream>
 
 template <typename T>
 std::vector<T> loadFileData(const std::string &path) {
     std::ifstream stream(path, std::ios::binary | std::ios::ate);
+    if (!stream.is_open())
+        throw std::runtime_error(fmt::format("Cannot load file from '{}'.", path));
+
     size_t size = stream.tellg();
     assert(size % sizeof(T) == 0);
     std::vector<T> data(size / sizeof(T));

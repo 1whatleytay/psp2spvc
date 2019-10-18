@@ -347,7 +347,8 @@ std::vector<uint8_t> CompilerGXP::compileData() {
     return builder.build();
 }
 
-CompilerGXP::CompilerGXP(const std::vector<uint32_t> &data) : Compiler(data) {
+CompilerGXP::CompilerGXP(const std::vector<uint32_t> &data, CompilerConfig config)
+    : Compiler(data), config(config), builder(config.printDisassembly, config.printAllocations) {
     createTranslators();
     createExtensions();
 }

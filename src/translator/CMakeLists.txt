@@ -1,4 +1,5 @@
 add_library(translator
+        include/translator/config.h
         include/translator/translator.h
 
         src/codes.cpp

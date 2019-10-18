@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gxp/gxp.h>
+#include <gxp/block.h>
 
 #include <map>
 #include <string>
@@ -8,61 +9,9 @@
 namespace gxp {
     typedef uint64_t Instruction;
 
-    class Builder;
-
     enum class ShaderType : uint8_t {
         Vertex = 0,
         Fragment = 1,
-    };
-
-    class Block {
-        std::vector<Instruction> instructions;
-
-        explicit Block(Builder &parent);
-        friend class gxp::Builder;
-    public:
-        Builder &parent;
-
-        void createNop();
-        void createMov(
-            usse::RegisterReference source,
-            usse::RegisterReference destination);
-        void createPack(
-            usse::RegisterReference source,
-            usse::RegisterReference destination);
-        void createDot(
-            usse::RegisterReference first,
-            usse::RegisterReference second,
-            usse::RegisterReference destination);
-        void createAdd(
-            usse::RegisterReference first,
-            usse::RegisterReference second,
-            usse::RegisterReference destination);
-        void createSub(
-            usse::RegisterReference first,
-            usse::RegisterReference second,
-            usse::RegisterReference destination);
-        void createMul(
-            usse::RegisterReference first,
-            usse::RegisterReference second,
-            usse::RegisterReference destination);
-        void createExp(
-            usse::RegisterReference source,
-            usse::RegisterReference destination);
-        void createLog(
-            usse::RegisterReference source,
-            usse::RegisterReference destination);
-        void createReverseSquareRoot(
-            usse::RegisterReference source,
-            usse::RegisterReference destination);
-        void createMin(
-            usse::RegisterReference first,
-            usse::RegisterReference second,
-            usse::RegisterReference destination);
-        void createMax(
-            usse::RegisterReference first,
-            usse::RegisterReference second,
-            usse::RegisterReference destination);
     };
 
     class Parameter {
@@ -84,6 +33,9 @@ namespace gxp {
         ProgramHeader header;
         ProgramVaryings varyings;
 
+        bool printDisassembly = false;
+        bool printAllocations = false;
+
         uint32_t paRegPointer = 0;
         uint32_t saRegPointer = 0;
         uint32_t oRegPointer = 0;
@@ -94,6 +46,8 @@ namespace gxp {
         std::vector<std::unique_ptr<Block>> secondaryBlocks;
         std::vector<Parameter> parameters;
         std::vector<ProgramFragmentInputInfo> fragmentInputs;
+
+        friend class Block;
     public:
         void setType(ShaderType type);
         ShaderType getType();
@@ -116,5 +70,6 @@ namespace gxp {
         std::vector<uint8_t> build();
 
         Builder();
+        Builder(bool printDisassembly, bool printAllocations);
     };
 }

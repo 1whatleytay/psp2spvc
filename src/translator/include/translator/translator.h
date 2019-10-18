@@ -1,12 +1,16 @@
 #pragma once
 
-#include <util/spirv.h>
+#include <translator/config.h>
+
 #include <gxp/builder.h>
+
+#include <util/spirv.h>
 
 #include <map>
 
 namespace gxp { class Block; }
 class CompilerGXP;
+class CompilerConfig;
 class TranslatorArguments;
 
 typedef void(CompilerGXP::*TranslatorImplementation)(const TranslatorArguments &arguments);
@@ -42,6 +46,7 @@ public:
 
 class CompilerGXP : public Compiler {
     gxp::Builder builder;
+    CompilerConfig config;
 
     std::vector<TranslatorCode> codes;
     std::map<SPIRExtension::Extension, std::unordered_map<GLSLstd450, TranslatorImplementation>> extensions;
@@ -105,5 +110,5 @@ public:
 
     std::vector<uint8_t> compileData();
 
-    explicit CompilerGXP(const std::vector<uint32_t> &data);
+    explicit CompilerGXP(const std::vector<uint32_t> &data, CompilerConfig config);
 };

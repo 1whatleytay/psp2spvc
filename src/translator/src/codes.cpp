@@ -1,5 +1,7 @@
 #include <translator/translator.h>
 
+#include <gxp/block.h>
+
 #include <util/util.h>
 
 #include <fmt/format.h>

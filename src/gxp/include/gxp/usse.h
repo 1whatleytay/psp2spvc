@@ -6,6 +6,8 @@
 #include <cstdint>
 
 namespace usse {
+    typedef uint64_t Instruction;
+
     enum class RegisterBank {
         Temporary,
         Primary,
