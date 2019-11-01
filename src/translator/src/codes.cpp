@@ -6,14 +6,35 @@
 
 #include <fmt/format.h>
 
+spv::Id CompilerGXP::resolveAlias(spv::Id id) {
+    while (idAliases.find(id) != idAliases.end())
+        id = idAliases[id];
+
+    return id;
+}
+
+void CompilerGXP::useRegister(spv::Id id) {
+    if (!config.optimizeRegisterSpace)
+        return;
+
+    id = resolveAlias(id);
+
+    if (idUsesLeft[id] == 0)
+        throw std::runtime_error(fmt::format("Id {} has no more uses.", id));
+
+    idUsesLeft[id]--;
+}
+
 usse::RegisterReference CompilerGXP::getRegister(spv::Id id) {
     auto varying = idVaryings.find(id);
     if (varying != idVaryings.end())
         return getOrThrow(varyingReferences, getOrThrow(idVaryings, id));
 
-    auto reg = idRegisters.find(id);
-    if (reg != idRegisters.end())
-        return getOrThrow(idRegisters, id).reference;
+    auto reg = idRegisters.find(resolveAlias(id));
+    if (reg != idRegisters.end()) {
+        useRegister(id);
+        return reg->second.reference;
+    }
 
     auto *constant = maybe_get<SPIRConstant>(id);
     if (constant) {
@@ -31,6 +52,43 @@ usse::RegisterReference CompilerGXP::getRegister(spv::Id id) {
     throw std::runtime_error(fmt::format("Cannot find register, varying or constant with id {}.", id));
 }
 
+void CompilerGXP::writeRegister(spv::Id id, TranslatorReference reg) {
+    if (idRegisters.find(id) == idRegisters.end()) {
+        idRegisters[id] = std::move(reg);
+        useRegister(id);
+    } else {
+        throw std::runtime_error(fmt::format("SSA Violation, id {} was assigned twice.", id));
+    }
+}
+
+void CompilerGXP::aliasRegister(spv::Id empty, spv::Id value) {
+    // Resolve aliases (so you can make aliases of aliases).
+    empty = resolveAlias(empty);
+    value = resolveAlias(value);
+
+    // Link source -> destination.
+    idAliases[empty] = value;
+    idRegisters.erase(empty);
+
+    if (config.optimizeRegisterSpace) {
+        // Keep destination alive until source is fully used.
+        idUsesLeft[value] += idUsesLeft[empty];
+    }
+}
+
+void CompilerGXP::cleanupRegisters() {
+    for (const auto &uses : idUsesLeft) {
+        if (uses.second == 0 && !contains(idsCleaned, uses.first) && idAliases.find(uses.first) == idAliases.end()) {
+            usse::RegisterReference reg = getOrThrow(idRegisters, uses.first).reference;
+
+            if (reg.bank == usse::RegisterBank::Temporary) {
+                builder.freeRegister(reg);
+                idsCleaned.push_back(uses.first);
+            }
+        }
+    }
+}
+
 void CompilerGXP::unimplemented(const TranslatorArguments &arguments) {
     throw std::runtime_error(fmt::format("{} is not implemented.", arguments.code.name));
 }
@@ -44,9 +102,17 @@ void CompilerGXP::opLoad(const TranslatorArguments &arguments) {
     spv::Id result = arguments.instruction[1];
     spv::Id pointer = arguments.instruction[2];
 
-    // This is a redirect, but it should really load into temp.
-    // Maybe let the user chose if there want to assume redirect or copy until we can introduce analysis.
-    idRegisters[result] = { getRegister(pointer) };
+    usse::RegisterReference reg = getRegister(pointer);
+
+    if (config.optimizeRegisterSpace && idUsesLeft[pointer] == 0) {
+        // If result allocation is going to be freed right after, just alias.
+        aliasRegister(result, pointer);
+    } else {
+        // If not, allocate more space.
+        usse::RegisterReference destination = builder.allocateRegister(usse::RegisterBank::Temporary, reg.type);
+        arguments.block.createPack(reg, destination);
+        writeRegister(result, { destination });
+    }
 }
 
 void CompilerGXP::opStore(const TranslatorArguments &arguments) {
@@ -87,7 +153,7 @@ void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
     }
 
     builder.freeRegister(internal);
-    idRegisters[result] = { temp };
+    writeRegister(result, { temp });
 }
 
 void CompilerGXP::opVectorTimesScalar(const TranslatorArguments &arguments) {
@@ -106,21 +172,7 @@ void CompilerGXP::opVectorTimesScalar(const TranslatorArguments &arguments) {
 
     arguments.block.createMul(vector, scalar, destination);
 
-    idRegisters[result] = { destination };
-}
-
-void CompilerGXP::opConvertUToF(const TranslatorArguments &arguments) {
-    spv::Id type = arguments.instruction[0];
-    spv::Id destination = arguments.instruction[1];
-    spv::Id source = arguments.instruction[2];
-
-    usse::RegisterReference srcReg = getRegister(source);
-    usse::RegisterReference destReg = builder.allocateRegister(
-        usse::RegisterBank::Temporary, { usse::Type::Float32, 4, 1 });
-
-    arguments.block.createPack(srcReg, destReg);
-
-    idRegisters[destination] = { destReg };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::opCompositeExtract(const TranslatorArguments &arguments) {
@@ -131,7 +183,7 @@ void CompilerGXP::opCompositeExtract(const TranslatorArguments &arguments) {
 
     usse::RegisterReference source = getRegister(sourceId);
 
-    idRegisters[result] = { source.getComponents(index, 1) };
+    writeRegister(result, { source.getComponents(index, 1) });
 }
 
 void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
@@ -170,7 +222,7 @@ void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
         a += size;
     }
 
-    idRegisters[result] = { output };
+    writeRegister(result, { output });
 }
 
 void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
@@ -186,7 +238,7 @@ void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
     SPIRType type = get_type_from_variable(base);
 
     if (type.basetype == SPIRType::Struct && is_member_builtin(type, builtInValue, &builtIn)) {
-        idRegisters[result] = { getOrThrow(varyingReferences, translateVarying(builtIn)) };
+        writeRegister(result, { getOrThrow(varyingReferences, translateVarying(builtIn)) });
         return;
     } else {
         ref = getOrThrow(idRegisters, base);
@@ -209,7 +261,7 @@ void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
         }
     }
 
-    idRegisters[result] = ref;
+    writeRegister(result, ref);
 }
 
 
@@ -240,7 +292,7 @@ void CompilerGXP::opVectorShuffle(const TranslatorArguments &arguments) {
         arguments.block.createMov(source, temp.getComponents(a, 1));
     }
 
-    idRegisters[result] = { temp };
+    writeRegister(result, { temp });
 }
 
 void CompilerGXP::opFNegate(const TranslatorArguments &arguments) {
@@ -256,7 +308,7 @@ void CompilerGXP::opFNegate(const TranslatorArguments &arguments) {
 
     arguments.block.createSub(zero, source, destination);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::opFAdd(const TranslatorArguments &arguments) {
@@ -273,7 +325,7 @@ void CompilerGXP::opFAdd(const TranslatorArguments &arguments) {
 
     arguments.block.createAdd(first, second, destination);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::opFSub(const TranslatorArguments &arguments) {
@@ -290,7 +342,7 @@ void CompilerGXP::opFSub(const TranslatorArguments &arguments) {
 
     arguments.block.createSub(first, second, destination);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::opFMul(const TranslatorArguments &arguments) {
@@ -307,7 +359,7 @@ void CompilerGXP::opFMul(const TranslatorArguments &arguments) {
 
     arguments.block.createMul(first, second, destination);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::opDot(const TranslatorArguments &arguments) {
@@ -330,7 +382,7 @@ void CompilerGXP::opDot(const TranslatorArguments &arguments) {
 
     builder.freeRegister(internal);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::opFunctionCall(const TranslatorArguments &arguments) {
@@ -341,12 +393,20 @@ void CompilerGXP::opFunctionCall(const TranslatorArguments &arguments) {
     SPIRFunction function = get<SPIRFunction>(functionId);
 
     for (size_t a = 0; a < function.arguments.size(); a++) {
-        idRegisters[function.arguments[a].id] = { getRegister(arguments.instruction[3 + a]) };
+        // Should be alias here, not writeRegister.
+        spv::Id moveToId = function.arguments[a].id;
+        spv::Id moveFromId = arguments.instruction[3 + a];
+
+        // Function use counts have not been created yet (until createFunction). Allow this assignment.
+        if (config.optimizeRegisterSpace)
+            idUsesLeft[moveToId]++;
+
+        aliasRegister(moveToId, moveFromId);
     }
 
     spv::Id returnValue = createFunction(function);
     if (returnValue != 0)
-        idRegisters[result] = { getRegister(returnValue) };
+        aliasRegister(result, returnValue);
 }
 
 void CompilerGXP::opExtInst(const TranslatorArguments &arguments) {
@@ -381,7 +441,7 @@ void CompilerGXP::extGLSLNormalize(const TranslatorArguments &arguments) {
     builder.freeRegister(magnitude);
     builder.freeRegister(temporary);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::extGLSLFMin(const TranslatorArguments &arguments) {
@@ -397,7 +457,7 @@ void CompilerGXP::extGLSLFMin(const TranslatorArguments &arguments) {
 
     arguments.block.createMin(first, second, destination);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::extGLSLFMax(const TranslatorArguments &arguments) {
@@ -413,7 +473,7 @@ void CompilerGXP::extGLSLFMax(const TranslatorArguments &arguments) {
 
     arguments.block.createMax(first, second, destination);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
@@ -444,7 +504,7 @@ void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
     builder.freeRegister(magnitude);
     builder.freeRegister(internal);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 void CompilerGXP::extGLSLPow(const TranslatorArguments &arguments) {
@@ -465,7 +525,7 @@ void CompilerGXP::extGLSLPow(const TranslatorArguments &arguments) {
     arguments.block.createMul(destination, second, destination);
     arguments.block.createExp(destination, destination);
 
-    idRegisters[result] = { destination };
+    writeRegister(result, { destination });
 }
 
 TranslatorArguments::TranslatorArguments(
@@ -594,7 +654,7 @@ void CompilerGXP::createTranslators() {
         { spv::Op::OpConvertFToU, "OpConvertFToU", &CompilerGXP::unimplemented },
         { spv::Op::OpConvertFToS, "OpConvertFToS", &CompilerGXP::unimplemented },
         { spv::Op::OpConvertSToF, "OpConvertSToF", &CompilerGXP::unimplemented },
-        { spv::Op::OpConvertUToF, "OpConvertUToF", &CompilerGXP::opConvertUToF },
+        { spv::Op::OpConvertUToF, "OpConvertUToF", &CompilerGXP::unimplemented },
         { spv::Op::OpUConvert, "OpUConvert", &CompilerGXP::unimplemented },
         { spv::Op::OpSConvert, "OpSConvert", &CompilerGXP::unimplemented },
         { spv::Op::OpFConvert, "OpFConvert", &CompilerGXP::unimplemented },

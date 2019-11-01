@@ -2,8 +2,9 @@
 
 #include <gxp/usse.h>
 #include <gxp/block.h>
-#include <gxp/disasm.h>
 #include <gxp/instructions.h>
+
+#include <util/util.h>
 
 #include <fmt/format.h>
 
@@ -69,19 +70,23 @@ namespace gxp {
             oRegPointer += size + needsAllocOffset(oRegPointer, size);
             break;
         case usse::RegisterBank::Temporary:
-            index = tRegPointer + needsAllocOffset(tRegPointer, size);
-            tRegPointer += size + needsAllocOffset(tRegPointer, size);
+            index = allocate(tRegSpace.data(), tRegSpace.size(), size, size == 4 ? 2 : 1);
+            if (index == ~0u)
+                throw std::runtime_error(fmt::format("Cannot allocate space for temporary register size {}.", size));
+            memset(&tRegSpace[index], true, sizeof(bool) * size);
+            if (tMaxRegs < index + size)
+                tMaxRegs = index + size;
             break;
         case usse::RegisterBank::Internal:
-            index = iRegPointer + needsAllocOffset(iRegPointer, size);
-            iRegPointer += size + needsAllocOffset(iRegPointer, size);
-            assert(iRegPointer <= 8);
+            // 1 internal register = 1 vec4
+            index = iRegPointer++;
+            assert(iRegPointer <= 4);
             break;
         default:
             throw std::runtime_error("Missing allocation method for bank.");
         }
 
-        if (printAllocations) {
+        if (config.printAllocations) {
             fmt::print("[alloc] {} registers of type {} (vec{}[{}]), size {} at index {}.\n",
                 usse::getBankName(bank), usse::getTypeName(type.type), type.components, type.arraySize, size, index);
         }
@@ -90,10 +95,19 @@ namespace gxp {
     }
 
     void Builder::freeRegister(usse::RegisterReference reg) {
-        if (reg.bank == usse::RegisterBank::Internal && reg.getEffectiveIndex() + reg.size == iRegPointer) {
-            iRegPointer -= reg.size;
-        } else {
+        switch (reg.bank) {
+        case usse::RegisterBank::Internal:
+            if (reg.index + 1 == iRegPointer)
+                iRegPointer--;
+            else
+                throw std::runtime_error("Latest internal register must be freed first.");
+            break;
+        case usse::RegisterBank::Temporary:
+            memset(&tRegSpace[reg.index], false, sizeof(bool) * reg.size);
+            break;
+        default:
             assert(false);
+            break;
         }
     }
 
@@ -289,8 +303,8 @@ namespace gxp {
         // Code
         header.primaryRegCount = paRegPointer;
         header.secondaryRegCount = saRegPointer;
-        header.tempRegCount1 = tRegPointer;
-        header.tempRegCount2 = tRegPointer; // Difference between both reg counts?
+        header.tempRegCount1 = tMaxRegs;
+        header.tempRegCount2 = tMaxRegs; // Difference between both reg counts?
         {
             header.secondaryProgramOffset = data.size() - OFFSET_OF(header, secondaryProgramOffset);
             for (const std::unique_ptr<Block> &block : secondaryBlocks) {
@@ -366,10 +380,8 @@ namespace gxp {
         return data;
     }
 
-    Builder::Builder() : Builder(false, false) { }
-
-    Builder::Builder(bool printDisassembly, bool printAllocations)
-        : printDisassembly(printDisassembly), printAllocations(printAllocations) {
+    Builder::Builder() : Builder(BuilderConfig { }) { }
+    Builder::Builder(BuilderConfig config) : config(config) {
         header.magic = gxpMagic;
         header.majorVersion = 1;
         header.minorVersion = 4;

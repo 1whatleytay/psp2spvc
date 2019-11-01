@@ -151,7 +151,7 @@ namespace usse {
         },
     };
 
-    bool BankLayout::isHalf(Type type) {
+    bool BankLayout::isHalfType(Type type) {
         return (
             type == Type::Float32 ||
             type == Type::Float16 ||
@@ -161,15 +161,14 @@ namespace usse {
             bank != usse::RegisterBank::Immediate;
     }
 
-    uint32_t BankLayout::getIndex(RegisterReference reference, uint32_t bits) {
+    uint32_t BankLayout::getIndex(RegisterReference reference, bool enableDoubleRegs, uint32_t bits) {
         uint32_t index = reference.index;
-        bool doubleReg = isHalf(reference.type.type);
+        bool doubleReg = enableDoubleRegs && isHalfType(reference.type.type);
 
-        if (doubleReg)
-            index /= 2;
-        // Top Bit, is this wrong? Looks more complex in V3K source.
         if (bank == RegisterBank::Internal)
-            index += 120 + (doubleReg ? 4 : 0);
+            index += (60 + (doubleReg ? 0 : 2)) * (bits == 7 ? 2 : 1);
+        else if (doubleReg)
+            index /= 2;
 
         return index;
     }
@@ -322,7 +321,8 @@ namespace usse {
     RegisterReference::RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex)
         : type(type), bank(bank), size(getTypeSize(type.type) * type.components * type.arraySize / 4) {
         bool swizzleUp = false;
-        if (regIndex % 2 == 1) {
+
+        if (bank != usse::RegisterBank::Internal && regIndex % 2 == 1) {
             regIndex--;
             swizzleUp = true;
         }

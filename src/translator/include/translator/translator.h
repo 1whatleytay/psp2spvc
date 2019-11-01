@@ -1,7 +1,5 @@
 #pragma once
 
-#include <translator/config.h>
-
 #include <gxp/builder.h>
 
 #include <util/spirv.h>
@@ -10,7 +8,6 @@
 
 namespace gxp { class Block; }
 class CompilerGXP;
-class CompilerConfig;
 class TranslatorArguments;
 
 typedef void(CompilerGXP::*TranslatorImplementation)(const TranslatorArguments &arguments);
@@ -44,15 +41,29 @@ public:
     bool isStruct();
 };
 
+class TranslatorConfig {
+public:
+    bool printDisassembly = false;
+    bool printAllocations = false;
+
+    bool optimizeRegisterSpace = false;
+
+    bool logDebug = false;
+};
+
 class CompilerGXP : public Compiler {
     gxp::Builder builder;
-    CompilerConfig config;
+    TranslatorConfig config;
 
     std::vector<TranslatorCode> codes;
     std::map<SPIRExtension::Extension, std::unordered_map<GLSLstd450, TranslatorImplementation>> extensions;
 
     std::map<spv::Id, gxp::ProgramVarying> idVaryings;
     std::map<spv::Id, TranslatorReference> idRegisters;
+    std::map<spv::Id, uint32_t> idUseCounts;
+    std::map<spv::Id, uint32_t> idUsesLeft;
+    std::map<spv::Id, spv::Id> idAliases;
+    std::vector<spv::Id> idsCleaned;
     std::map<gxp::ProgramVarying, usse::RegisterReference> varyingReferences;
 
     static usse::Type translateType(SPIRType::BaseType baseType);
@@ -65,11 +76,18 @@ class CompilerGXP : public Compiler {
         std::vector<gxp::ProgramVarying> &availableTexCoords,
         uint32_t components);
 
+    void createIdUseCounts(const SPIRFunction &function);
+
     TranslatorReference createVariable(usse::RegisterBank bank, const SPIRType &type);
     TranslatorReference createParameter(gxp::ParameterCategory category, const SPIRType &type,
         const std::string &name);
 
+    spv::Id resolveAlias(spv::Id id);
+    void useRegister(spv::Id id);
     usse::RegisterReference getRegister(spv::Id id);
+    void writeRegister(spv::Id id, TranslatorReference reg);
+    void aliasRegister(spv::Id empty, spv::Id value);
+    void cleanupRegisters();
 
     spv::Id createBlock(const SPIRBlock &block);
     spv::Id createFunction(const SPIRFunction &function);
@@ -87,7 +105,6 @@ class CompilerGXP : public Compiler {
     void opStore(const TranslatorArguments &arguments);
     void opMatrixTimesVector(const TranslatorArguments &arguments);
     void opVectorTimesScalar(const TranslatorArguments &arguments);
-    void opConvertUToF(const TranslatorArguments &arguments);
     void opCompositeExtract(const TranslatorArguments &arguments);
     void opCompositeConstruct(const TranslatorArguments &arguments);
     void opAccessChain(const TranslatorArguments &arguments);
@@ -110,5 +127,5 @@ public:
 
     std::vector<uint8_t> compileData();
 
-    explicit CompilerGXP(const std::vector<uint32_t> &data, CompilerConfig config);
+    explicit CompilerGXP(const std::vector<uint32_t> &data, TranslatorConfig config);
 };

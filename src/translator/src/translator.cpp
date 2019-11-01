@@ -1,10 +1,20 @@
 #include <translator/translator.h>
 
+#include <util/util.h>
 #include <gxp/builder.h>
 
 #include <fmt/format.h>
 
 #define VERTEX_POSITION_OUTPUT_ONLY
+
+gxp::BuilderConfig translateConfig(TranslatorConfig config) {
+    gxp::BuilderConfig result;
+
+    result.printAllocations = config.printAllocations;
+    result.printDisassembly = config.printDisassembly;
+
+    return result;
+}
 
 // Position, PointSize, Clip0 and Clip1 are removed so they are not allocated over.
 const std::vector<gxp::ProgramVarying> allVaryings = {
@@ -117,6 +127,55 @@ gxp::ProgramVarying CompilerGXP::allocateVarying(
     return selected;
 }
 
+void CompilerGXP::createIdUseCounts(const SPIRFunction &function) {
+    for (uint32_t blockId : function.blocks) {
+        const SPIRBlock &block = get<SPIRBlock>(blockId);
+
+        for (Instruction instruction : block.ops) {
+            int32_t idCount = 0;
+            std::vector<uint32_t> excludeIndices;
+
+            switch (instruction.op) {
+            case spv::OpCompositeExtract:
+                idCount = 3;
+                break;
+            case spv::OpVectorShuffle:
+                idCount = 4;
+                break;
+            case spv::OpExtInst:
+                excludeIndices = { 3 };
+                idCount = instruction.count - 1;
+                break;
+            default:
+                idCount = instruction.count - 1;
+                break;
+            }
+
+            // Negative id count allows for manual analysis of ids in switch statement.
+            if (idCount > 0) {
+                for (uint32_t a = 0; a < idCount; a++) {
+                    // Should resolve alias since some function parameters are aliased before their uses are counted.
+                    spv::Id current = resolveAlias(ir.spirv[instruction.offset + a]);
+
+                    if (contains(excludeIndices, a))
+                        continue;
+                    if (ir.ids[current].get_type() == Types::TypeType)
+                        continue;
+
+                    idUseCounts[current]++;
+                    idUsesLeft[current]++;
+                }
+            }
+        }
+
+
+        if (block.terminator == SPIRBlock::Return && block.return_value != 0) {
+            idUseCounts[block.return_value]++;
+            idUsesLeft[block.return_value]++;
+        }
+    }
+}
+
 TranslatorReference CompilerGXP::createVariable(usse::RegisterBank bank, const SPIRType &type) {
     if (type.basetype == SPIRType::Struct) {
         TranslatorReference reference;
@@ -163,10 +222,16 @@ spv::Id CompilerGXP::createBlock(const SPIRBlock &block) {
             *gxpBlock,
             code,
             &ir.spirv[instruction.offset],
-            instruction.count
-            );
+            instruction.count);
 
         (this->*code.implementation)(arguments);
+
+        // TODO: This is supposed to start a new block, but CompilerGXP::opFunctionCall should probably be responsible for that.
+        if (instruction.op == spv::OpFunctionCall)
+            gxpBlock = builder.createPrimaryBlock();
+
+        if (config.optimizeRegisterSpace)
+            cleanupRegisters();
     }
 
     if (block.terminator == SPIRBlock::Return)
@@ -176,6 +241,9 @@ spv::Id CompilerGXP::createBlock(const SPIRBlock &block) {
 }
 
 spv::Id CompilerGXP::createFunction(const SPIRFunction &function) {
+    if (config.optimizeRegisterSpace)
+        createIdUseCounts(function);
+
     for (uint32_t local : function.local_variables) {
         SPIRType type = get_type_from_variable(local);
 
@@ -341,14 +409,26 @@ std::vector<uint8_t> CompilerGXP::compileData() {
 //    try {
         createFunction(entryFunction);
 //    } catch (std::runtime_error &e) {
-//        fmt::print("{}\n", e.what());
+//        fmt::print("Error: {}\n", e.what());
 //    }
+
+    if (config.logDebug) {
+        if (config.optimizeRegisterSpace) {
+            fmt::print("All Detected Usages:\n");
+            for (const auto &pair : idUseCounts) {
+                if (idUsesLeft[pair.first] == 0)
+                    fmt::print("[id: {}] uses: {}\n", pair.first, pair.second);
+                else
+                    fmt::print("[id: {}] uses: {}, remaining: {}\n", pair.first, pair.second, idUsesLeft[pair.first]);
+            }
+        }
+    }
 
     return builder.build();
 }
 
-CompilerGXP::CompilerGXP(const std::vector<uint32_t> &data, CompilerConfig config)
-    : Compiler(data), config(config), builder(config.printDisassembly, config.printAllocations) {
+CompilerGXP::CompilerGXP(const std::vector<uint32_t> &data, TranslatorConfig config)
+    : Compiler(data), config(config), builder(translateConfig(config)) {
     createTranslators();
     createExtensions();
 }

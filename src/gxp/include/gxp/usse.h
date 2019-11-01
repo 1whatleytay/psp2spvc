@@ -130,8 +130,8 @@ namespace usse {
         uint8_t extension = 0;
         uint8_t number = 0;
 
-        bool isHalf(Type type);
-        uint32_t getIndex(RegisterReference reference, uint32_t bits = 7);
+        bool isHalfType(Type type);
+        uint32_t getIndex(RegisterReference reference, bool enableDoubleRegs = true, uint32_t bits = 6);
 
         static BankLayout destLayout(RegisterBank bank);
         static BankLayout src0Layout(RegisterBank bank);

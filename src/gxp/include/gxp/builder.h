@@ -14,6 +14,9 @@ namespace gxp {
         Fragment = 1,
     };
 
+    // Should be 64 (some instructions only have 6 bit index), at most 128. Set higher for non -Oreg-space shaders.
+    constexpr size_t maxTemporaryRegisters = 128;
+
     class Parameter {
     public:
         std::string name;
@@ -29,18 +32,25 @@ namespace gxp {
         usse::RegisterBank getBank();
     };
 
-    class Builder {
-        ProgramHeader header;
-        ProgramVaryings varyings;
-
+    class BuilderConfig {
+    public:
         bool printDisassembly = false;
         bool printAllocations = false;
+    };
+
+    class Builder {
+        BuilderConfig config;
+
+        ProgramHeader header;
+        ProgramVaryings varyings;
 
         uint32_t paRegPointer = 0;
         uint32_t saRegPointer = 0;
         uint32_t oRegPointer = 0;
-        uint32_t tRegPointer = 0;
         uint32_t iRegPointer = 0;
+
+        std::array<bool, maxTemporaryRegisters> tRegSpace;
+        uint32_t tMaxRegs = 0;
 
         std::vector<std::unique_ptr<Block>> primaryBlocks;
         std::vector<std::unique_ptr<Block>> secondaryBlocks;
@@ -70,6 +80,6 @@ namespace gxp {
         std::vector<uint8_t> build();
 
         Builder();
-        Builder(bool printDisassembly, bool printAllocations);
+        explicit Builder(BuilderConfig config);
     };
 }

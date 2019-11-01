@@ -14,10 +14,14 @@ bool Interface::parseParams(int count, char **args) {
             ERROR_RETURN_IF(!outputFilePath.empty(), "Multiple output files specified.")
             outputFilePath = args[a + 1];
             a++;
-        } else if (strcmp(args[a], "-disasm") == 0) {
+        } else if (strcmp(args[a], "-S") == 0) { // Print Disassembly
             config.printDisassembly = true;
-        } else if (strcmp(args[a], "-alloc") == 0) {
+        } else if (strcmp(args[a], "-A") == 0) { // Print Register Allocations
             config.printAllocations = true;
+        } else if (strcmp(args[a], "-L") == 0) { // Print Optimization Debug Messages
+            config.logDebug = true;
+        } else if (strcmp(args[a], "-Oreg-space") == 0) { // Optimize Register Space
+            config.optimizeRegisterSpace = true;
         } else {
             ERROR_RETURN_IF(!inputFilePath.empty(), "Multiple input files specified.")
             inputFilePath = args[a];
@@ -44,7 +48,7 @@ int Interface::exec(int count, char **args) {
         std::ofstream stream(outputFilePath);
         stream.write(reinterpret_cast<char *>(gxpData.data()), gxpData.size());
         stream.close();
-        fmt::printf("Done.");
+        fmt::print("Done.\n");
 #ifdef NDEBUG
     } catch (std::runtime_error &e) {
         fmt::print("{}\n", e.what());
