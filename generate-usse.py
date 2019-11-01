@@ -8,7 +8,7 @@ class Protection(Enum):
     DEBUG = 2
 
 
-protection = Protection.SAFE
+protection = Protection.DEBUG
 
 bit_types = """
     typedef uint64_t Instruction;
@@ -39,7 +39,7 @@ with open('external/usse-decoder-gen/grammar.yaml', 'r') as stream:
             elif type(member_info) is int:
                 index -= member_info
                 if not first:
-                    parameters += ',\n\t\t\t'
+                    parameters += ',\n\t\t'
                 parameters += 'Param/*' + str(member_info) + '*/ ' + member_name
                 first = False
                 if protection == Protection.DEBUG:
@@ -60,7 +60,7 @@ with open('external/usse-decoder-gen/grammar.yaml', 'r') as stream:
                     function += '\t\tinst |= 0b' + member_info['match'] + 'ull << ' + str(index) + 'u;\n'
                 else:
                     if not first:
-                        parameters += ',\n\t\t\t'
+                        parameters += ',\n\t\t'
                     parameters += 'Param/*' + str(member_info['size']) + '*/ ' + member_name
                     first = False
                     if protection == Protection.DEBUG:
@@ -74,14 +74,14 @@ with open('external/usse-decoder-gen/grammar.yaml', 'r') as stream:
                             + ('1' * member_info['size']) + 'ull) << ' + str(index) + 'u;\n'
 
         if parameters:
-            declaration += '\n\t\t\t' + parameters
+            declaration += '\n\t\t' + parameters
         declaration += ')'
         header += '\t' + declaration + ';\n\n'
         source += '\t' + declaration + ' {\n' + function + '\t\treturn inst;\n\t}\n\n'
 
-    header += '}'
-    source += '}'
-    with open('instructions.h', 'w+') as header_out:
+    header += '}\n'
+    source += '}\n'
+    with open('src/gxp/include/gxp/instructions.h', 'w+') as header_out:
         header_out.write(header)
-    with open('instructions.cpp', 'w+') as source_out:
+    with open('src/gxp/src/instructions.cpp', 'w+') as source_out:
         source_out.write(source)
