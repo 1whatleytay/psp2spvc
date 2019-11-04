@@ -243,8 +243,8 @@ namespace usse {
         return mask;
     }
 
-    int32_t RegisterReference::getSwizzleIndex(bool extended) {
-        switch (type.components) {
+    int32_t RegisterReference::getSwizzleIndex(bool extended, int32_t components) {
+        switch (components == -1 ? type.components : components) {
         case 4: {
             usse::SwizzleVec4 vec;
             std::copy(swizzle.begin(), swizzle.end(), vec.begin());
@@ -252,7 +252,8 @@ namespace usse {
         }
         case 3: {
             usse::SwizzleVec3 vec;
-            std::copy(swizzle.begin(), swizzle.end(), vec.begin());
+            bool firstIsBlank = swizzle[0] == usse::SwizzleChannel::DontCare;
+            std::copy(swizzle.begin() + firstIsBlank, swizzle.end() - !firstIsBlank, vec.begin());
             return usse::getSwizzleVec3Index(vec, extended);
         }
         case 1:
@@ -299,13 +300,8 @@ namespace usse {
     RegisterReference RegisterReference::getElement(uint32_t element) {
         if (element >= type.arraySize)
             throw std::runtime_error("Register reference array out of bounds.");
-        RegisterReference reg = *this;
 
-        reg.type.arraySize = 1;
-        reg.size = size / type.arraySize;
-        reg.index += reg.size * element;
-
-        return reg;
+        return RegisterReference({ type.type, type.components, 1 }, bank, index + size / type.arraySize * element);
     }
 
     RegisterReference RegisterReference::getExpanded(uint32_t count) {
@@ -314,6 +310,21 @@ namespace usse {
         reg.lockSwizzle = true;
         reg.swizzle = usse::getSwizzleVec4All(swizzle[0]);
         reg.type.components = count;
+
+        return reg;
+    }
+
+    RegisterReference RegisterReference::getAligned(uint8_t writeMask) {
+        RegisterReference reg = *this;
+
+        reg.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::DontCare);
+
+        uint32_t swizzleIndex = 0;
+        for (uint32_t a = 0; a < 4; a++) {
+            if (writeMask & (1u << a)) {
+                reg.swizzle[a] = swizzle[swizzleIndex++];
+            }
+        }
 
         return reg;
     }

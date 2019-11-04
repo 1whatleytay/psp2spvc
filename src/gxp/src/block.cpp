@@ -79,6 +79,8 @@ namespace gxp {
             2, // Output8
         };
 
+        usse::RegisterReference alignedSource = source.getAligned(destination.getSwizzleMask());
+
         printDisassembly("pck", { source }, &destination);
         instructions.push_back(usse::makeVPCK(
             0, // pred
@@ -98,14 +100,14 @@ namespace gxp {
             srcBankLayout.number, // src1_bank_sel
             srcBankLayout.number, // src2_bank_sel
             destBankLayout.getIndex(destination, false, 7), // dest_n
-            destination.type.components > 3 ? static_cast<uint32_t>(destination.swizzle[3]) & 0b11u : 0, // comp_sel_3
+            static_cast<uint32_t>(alignedSource.swizzle[3]) & 0b11u, // comp_sel_3
             false, // scale
-            static_cast<uint32_t>(destination.swizzle[1]) & 0b11u, // comp_sel_1
-            static_cast<uint32_t>(destination.swizzle[2]) & 0b11u, // comp_sel_2
+            static_cast<uint32_t>(alignedSource.swizzle[1]) & 0b11u, // comp_sel_1
+            static_cast<uint32_t>(alignedSource.swizzle[2]) & 0b11u, // comp_sel_2
             srcBankLayout.getIndex(source.getHalf(0)), // src1_n
-            static_cast<uint32_t>(destination.swizzle[0]) & 0b10u >> 1u, // comp0_sel_bit1
+            (static_cast<uint32_t>(alignedSource.swizzle[0]) & 0b10u) >> 1u, // comp0_sel_bit1
             srcBankLayout.getIndex(source.getHalf(1)), // src2_n
-            static_cast<uint32_t>(destination.swizzle[0]) & 0b01u // comp_sel_0_bit0
+            static_cast<uint32_t>(alignedSource.swizzle[0]) & 0b01u // comp_sel_0_bit0
         ));
     }
 
@@ -146,7 +148,7 @@ namespace gxp {
             static_cast<usse::Param>(first.swizzle[1]), // src1_swiz_y
             static_cast<usse::Param>(first.swizzle[0]), // src1_swiz_x
             firstBankLayout.getIndex(first) // src1_n
-            ));
+        ));
     }
 
     void Block::createAdd(
@@ -181,7 +183,7 @@ namespace gxp {
             (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
             firstBankLayout.extension, // src1_bank_ext
             secondBankLayout.extension, // src2_bank_ext
-            second.getSwizzleIndex(), // src2_swiz
+            second.getAligned(destination.getSwizzleMask()).getSwizzleIndex(false, 4), // src2_swiz
             0, // nosched
             destination.getSwizzleMask(), // dest_mask
             0b00, // src1_mod
@@ -207,16 +209,16 @@ namespace gxp {
         usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
 
         uint32_t swizzleIndex = 0;
-        uint32_t firstSwizzle = 0;
+        uint32_t secondSwizzle = 0;
         uint8_t destMask = destination.getSwizzleMask();
         for (uint32_t a = 0; a < 4; a++) {
             if (destMask & (1u << a)) {
-                usse::SwizzleChannel channel = first.swizzle[swizzleIndex++];
+                usse::SwizzleChannel channel = second.swizzle[swizzleIndex++];
 
                 // Swizzle does not have appropriate value for writing to destination.
                 assert(channel != usse::SwizzleChannel::DontCare);
 
-                firstSwizzle |= static_cast<uint32_t>(channel) << (a * 3);
+                secondSwizzle |= static_cast<uint32_t>(channel) << (a * 3);
             }
         }
 
@@ -225,23 +227,23 @@ namespace gxp {
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
             0, // skipinv
-            (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
+            (secondSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext
-            (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
+            (secondSwizzle >> 9u) & 0b1u, // src1_swiz_9
             secondBankLayout.extension, // src1_bank_ext
             firstBankLayout.extension, // src2_bank_ext
-            second.getSwizzleIndex(), // src2_swiz
+            first.getAligned(destination.getSwizzleMask()).getSwizzleIndex(false, 4), // src2_swiz
             0, // nosched
             destination.getSwizzleMask(), // dest_mask
             0b01, // src1_mod
             0b0, // src2_mod
-            (firstSwizzle >> 7u) & 0b11u, // src1_swiz_7_8
+            (secondSwizzle >> 7u) & 0b11u, // src1_swiz_7_8
             destBankLayout.number, // dest_bank_sel
             secondBankLayout.number, // src1_bank_sel
             firstBankLayout.number, // src2_bank_sel
             destBankLayout.getIndex(destination), // dest_n
-            (firstSwizzle >> 0u) & 0b1111111u, // src1_swiz_0_6
+            (secondSwizzle >> 0u) & 0b1111111u, // src1_swiz_0_6
             static_cast<usse::Param>(usse::InstructionVNMADOp::Add), // op2
             secondBankLayout.getIndex(second), // src1_n
             firstBankLayout.getIndex(first) // src2_n
@@ -256,11 +258,18 @@ namespace gxp {
         usse::BankLayout secondBankLayout = usse::BankLayout::srcLayout(second.bank);
         usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
 
-        uint32_t shift = 0;
+        uint32_t swizzleIndex = 0;
         uint32_t firstSwizzle = 0;
-        for (usse::SwizzleChannel channel : first.swizzle) {
-            firstSwizzle |= static_cast<uint32_t>(channel) << shift;
-            shift += 3;
+        uint8_t destMask = destination.getSwizzleMask();
+        for (uint32_t a = 0; a < 4; a++) {
+            if (destMask & (1u << a)) {
+                usse::SwizzleChannel channel = first.swizzle[swizzleIndex++];
+
+                // Swizzle does not have appropriate value for writing to destination.
+                assert(channel != usse::SwizzleChannel::DontCare);
+
+                firstSwizzle |= static_cast<uint32_t>(channel) << (a * 3);
+            }
         }
 
         printDisassembly("mul", { first, second }, &destination);
@@ -273,7 +282,7 @@ namespace gxp {
             (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
             firstBankLayout.extension, // src1_bank_ext
             secondBankLayout.extension, // src2_bank_ext
-            second.getSwizzleIndex(), // src2_swiz
+            second.getAligned(destination.getSwizzleMask()).getSwizzleIndex(false, 4), // src2_swiz
             0, // nosched
             destination.getSwizzleMask(), // dest_mask
             0b00, // src1_mod
@@ -424,11 +433,18 @@ namespace gxp {
         usse::BankLayout secondBankLayout = usse::BankLayout::srcLayout(second.bank);
         usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
 
-        uint32_t shift = 0;
+        uint32_t swizzleIndex = 0;
         uint32_t firstSwizzle = 0;
-        for (usse::SwizzleChannel channel : first.swizzle) {
-            firstSwizzle |= static_cast<uint32_t>(channel) << shift;
-            shift += 3;
+        uint8_t destMask = destination.getSwizzleMask();
+        for (uint32_t a = 0; a < 4; a++) {
+            if (destMask & (1u << a)) {
+                usse::SwizzleChannel channel = first.swizzle[swizzleIndex++];
+
+                // Swizzle does not have appropriate value for writing to destination.
+                assert(channel != usse::SwizzleChannel::DontCare);
+
+                firstSwizzle |= static_cast<uint32_t>(channel) << (a * 3);
+            }
         }
 
         printDisassembly("min", { first, second }, &destination);
@@ -441,7 +457,7 @@ namespace gxp {
             (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
             firstBankLayout.extension, // src1_bank_ext
             secondBankLayout.extension, // src2_bank_ext
-            second.getSwizzleIndex(), // src2_swiz
+            second.getAligned(destination.getSwizzleMask()).getSwizzleIndex(false, 4), // src2_swiz
             0, // nosched
             destination.getSwizzleMask(), // dest_mask
             0b00, // src1_mod
@@ -466,11 +482,18 @@ namespace gxp {
         usse::BankLayout secondBankLayout = usse::BankLayout::srcLayout(second.bank);
         usse::BankLayout destBankLayout = usse::BankLayout::destLayout(destination.bank);
 
-        uint32_t shift = 0;
+        uint32_t swizzleIndex = 0;
         uint32_t firstSwizzle = 0;
-        for (usse::SwizzleChannel channel : first.swizzle) {
-            firstSwizzle |= static_cast<uint32_t>(channel) << shift;
-            shift += 3;
+        uint8_t destMask = destination.getSwizzleMask();
+        for (uint32_t a = 0; a < 4; a++) {
+            if (destMask & (1u << a)) {
+                usse::SwizzleChannel channel = first.swizzle[swizzleIndex++];
+
+                // Swizzle does not have appropriate value for writing to destination.
+                assert(channel != usse::SwizzleChannel::DontCare);
+
+                firstSwizzle |= static_cast<uint32_t>(channel) << (a * 3);
+            }
         }
 
         printDisassembly("max", { first, second }, &destination);
@@ -483,7 +506,7 @@ namespace gxp {
             (firstSwizzle >> 9u) & 0b1u, // src1_swiz_9
             firstBankLayout.extension, // src1_bank_ext
             secondBankLayout.extension, // src2_bank_ext
-            second.getSwizzleIndex(), // src2_swiz
+            second.getAligned(destination.getSwizzleMask()).getSwizzleIndex(false, 4), // src2_swiz
             0, // nosched
             destination.getSwizzleMask(), // dest_mask
             0b00, // src1_mod
