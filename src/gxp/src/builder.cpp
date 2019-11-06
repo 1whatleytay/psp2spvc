@@ -11,8 +11,6 @@
 #define OFFSET_OF(parent, child) (reinterpret_cast<uintptr_t>(&parent.child) - reinterpret_cast<uintptr_t>(&parent))
 
 namespace gxp {
-    constexpr uint16_t containerIndexSA = 14;
-
     void Builder::setType(gxp::ShaderType type) {
         header.type = static_cast<uint8_t>(type);
     }
@@ -118,6 +116,18 @@ namespace gxp {
         usse::RegisterReference reg = allocateRegister(parameters[index].getBank(), parameter.type);
         parameters[index].resourceIndex = reg.index;
         parameters[index].containerIndex = 0;
+
+        return reg;
+    }
+
+    usse::RegisterReference Builder::registerLiteral(const std::vector<float> &literal) {
+        assert(!literal.empty() && literal.size() <= 4);
+
+        usse::RegisterReference reg({ usse::Type::Float32, static_cast<uint32_t>(literal.size()), 1 },
+            usse::RegisterBank::Secondary, literals.size());
+
+        for (float a : literal)
+            literals.push_back(a);
 
         return reg;
     }
@@ -249,20 +259,47 @@ namespace gxp {
             stringDB.push_back(entry);
         }
 
+        std::vector<ProgramContainerInfo> containers;
+
+        // Default Container
+        containers.push_back({
+            static_cast<uint16_t>(ContainerIndex::Default), // Container Index
+            0, // ??
+            0, // Register Index
+            static_cast<uint16_t>(saRegPointer) // Register Count
+        });
+
+        // Literals
+        if (!literals.empty()) {
+            containers.push_back({
+                static_cast<uint16_t>(ContainerIndex::Literal),
+                0, // ??
+                static_cast<uint16_t>(saRegPointer), // Register Index
+                static_cast<uint16_t>(literals.size())
+            });
+
+            header.literalsCount = literals.size();
+            header.literalsOffset = data.size() - OFFSET_OF(header, literalsOffset);
+            for (uint32_t a = 0; a < literals.size(); a++) {
+                float literal = literals[a];
+
+                data.insert(data.end(),
+                    reinterpret_cast<uint8_t *>(&a),
+                    reinterpret_cast<uint8_t *>(&a) + sizeof(uint32_t));
+                data.insert(data.end(),
+                    reinterpret_cast<uint8_t *>(&literal),
+                    reinterpret_cast<uint8_t *>(&literal) + sizeof(float));
+            }
+        }
+
         // Containers
-        header.containerCount = 1;
+        header.containerCount = containers.size();
         header.containerOffset = data.size() - OFFSET_OF(header, containerOffset);
         {
-            ProgramContainerInfo info = {
-                containerIndexSA, // Container Index
-                0, // ??
-                0, // Register Index
-                static_cast<uint16_t>(saRegPointer) // Register Count
-            };
             data.insert(data.end(),
-                reinterpret_cast<uint8_t *>(&info),
-                reinterpret_cast<uint8_t *>(&info)
-                + sizeof(ProgramContainerInfo));
+                reinterpret_cast<uint8_t *>(containers.data()),
+                reinterpret_cast<uint8_t *>(containers.data())
+                + containers.size() * sizeof(ProgramContainerInfo));
         }
 
         // Parameters
@@ -274,7 +311,7 @@ namespace gxp {
             parameter.arraySize = param.type.arraySize;
             parameter.semantic = static_cast<uint16_t>(param.semantic);
             parameter.config = createParameterConfig(param.category, getParameterTypeFromUSSEType(param.type.type),
-                param.type.components, containerIndexSA);
+                param.type.components, ContainerIndex::Default);
 
             auto stringEntry = std::find_if(stringDB.begin(), stringDB.end(), [param](const StringEntry &entry) {
                 return entry.text == param.name;
@@ -284,9 +321,10 @@ namespace gxp {
 
             parameter.nameOffset = stringEntry->index - (data.size() + OFFSET_OF(parameter, nameOffset));
 
-            std::vector<uint8_t> paramData(sizeof(parameter));
-            std::memcpy(paramData.data(), &parameter, sizeof(parameter));
-            data.insert(data.end(), paramData.begin(), paramData.end());
+            data.insert(data.end(),
+                reinterpret_cast<uint8_t *>(&parameter),
+                reinterpret_cast<uint8_t *>(&parameter)
+                + sizeof(parameter));
         }
 
         // Varyings
@@ -302,7 +340,7 @@ namespace gxp {
 
         // Code
         header.primaryRegCount = paRegPointer;
-        header.secondaryRegCount = saRegPointer;
+        header.secondaryRegCount = saRegPointer + literals.size();
         header.tempRegCount1 = tMaxRegs;
         header.tempRegCount2 = tMaxRegs; // Difference between both reg counts?
         {

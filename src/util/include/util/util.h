@@ -12,7 +12,9 @@ std::vector<T> loadFileData(const std::string &path) {
         throw std::runtime_error(fmt::format("Cannot load file from '{}'.", path));
 
     size_t size = stream.tellg();
-    assert(size % sizeof(T) == 0);
+    if (size % sizeof(T) != 0)
+        throw std::runtime_error(fmt::format("Cannot load file from '{}' due to invalid type.", path));
+
     std::vector<T> data(size / sizeof(T));
     stream.seekg(0, std::ios::beg);
     stream.read(reinterpret_cast<char *>(data.data()), size);

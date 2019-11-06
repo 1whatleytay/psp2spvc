@@ -55,6 +55,7 @@ namespace gxp {
         std::vector<std::unique_ptr<Block>> primaryBlocks;
         std::vector<std::unique_ptr<Block>> secondaryBlocks;
         std::vector<Parameter> parameters;
+        std::vector<float> literals;
         std::vector<ProgramFragmentInputInfo> fragmentInputs;
 
         friend class Block;
@@ -69,6 +70,7 @@ namespace gxp {
         void freeRegister(usse::RegisterReference reg);
 
         usse::RegisterReference registerParameter(const Parameter &parameter);
+        usse::RegisterReference registerLiteral(const std::vector<float> &literal);
 
         std::map<ProgramVarying, usse::RegisterReference> registerVertexVaryings(
             const std::vector<ProgramVarying> &outputs, const std::vector<ProgramVectorInfo> &texCoords);

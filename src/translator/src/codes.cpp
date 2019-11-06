@@ -26,6 +26,8 @@ void CompilerGXP::useRegister(spv::Id id) {
 }
 
 usse::RegisterReference CompilerGXP::getRegister(spv::Id id) {
+    id = resolveAlias(id);
+
     auto varying = idVaryings.find(id);
     if (varying != idVaryings.end())
         return getOrThrow(varyingReferences, getOrThrow(idVaryings, id));
@@ -40,13 +42,24 @@ usse::RegisterReference CompilerGXP::getRegister(spv::Id id) {
     if (constant) {
         // FP Constant only
         auto type = get_type(constant->constant_type);
-        assert(type.vecsize <= 1
-            && type.columns <= 1
+        assert(type.columns <= 1
             && type.basetype == SPIRType::Float);
-        int32_t regIndex = usse::getFPConstantIndex(constant->m.c[0].r[0].f32);
-        if (regIndex != -1) {
-            return usse::RegisterReference({ usse::Type::Float32, 1, 1 }, usse::RegisterBank::FloatConstant, regIndex);
+
+        if (type.vecsize == 1) {
+            int32_t regIndex = usse::getFPConstantIndex(constant->m.c[0].r[0].f32);
+            if (regIndex != -1) {
+                return usse::RegisterReference({usse::Type::Float32, 1, 1}, usse::RegisterBank::FloatConstant,
+                                               regIndex);
+            }
         }
+
+        std::vector<float> literal(type.vecsize);
+        for (uint32_t a = 0; a < type.vecsize; a++)
+            literal[a] = constant->m.c[0].r[a].f32;
+
+        usse::RegisterReference literalReg = builder.registerLiteral(literal);
+        writeRegister(id, { literalReg });
+        return literalReg;
     }
 
     throw std::runtime_error(fmt::format("Cannot find register, varying or constant with id {}.", id));

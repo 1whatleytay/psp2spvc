@@ -128,6 +128,28 @@ namespace gxp {
     uint32_t getVertexVaryingBits(ProgramVarying varying);
     uint32_t getFragmentVaryingBits(ProgramVarying varying);
 
+    enum class ContainerIndex : uint16_t {
+        Buffer0,
+        Buffer1,
+        Buffer2,
+        Buffer3,
+        Buffer4,
+        Buffer5,
+        Buffer6,
+        Buffer7,
+        Buffer8,
+        Buffer9,
+        Buffer10,
+        Buffer12,
+        Buffer13,
+        Default,
+        Texture,
+        Literal,
+        Scratch,
+        Thread,
+        Data,
+    };
+
     class ProgramVectorInfo {
     public:
         ProgramVarying varying;
@@ -239,5 +261,5 @@ namespace gxp {
     };
 
     uint16_t createParameterConfig(ParameterCategory category, ParameterType type,
-        uint32_t components, uint32_t containerIndex);
+        uint32_t components, ContainerIndex containerIndex);
 }

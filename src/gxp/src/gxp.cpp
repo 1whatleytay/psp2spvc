@@ -141,9 +141,9 @@ namespace gxp {
     }
 
     uint16_t createParameterConfig(ParameterCategory category, ParameterType type,
-        uint32_t components, uint32_t containerIndex) {
+        uint32_t components, ContainerIndex containerIndex) {
         uint16_t config = 0;
-        config |= (containerIndex & 0b1111u) << 12u;
+        config |= (static_cast<uint16_t>(containerIndex) & 0b1111u) << 12u;
         config |= (components & 0b1111u) << 8u;
         config |= (static_cast<uint16_t>(type) & 0b1111u) << 4u;
         config |= static_cast<uint16_t>(category) & 0b1111u;
