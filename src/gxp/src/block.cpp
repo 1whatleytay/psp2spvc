@@ -14,9 +14,32 @@ namespace gxp {
             fmt::print("[disasm] {}\n", usse::disasm::disassemble(name, sources, destination));
     }
 
-    void Block::createNop() {
-        usse::disasm::disassemble("nop", { });
-        instructions.push_back(usse::makeNOP());
+    void Block::moveData(
+        usse::RegisterReference source,
+        usse::RegisterReference destination) {
+        assert(source.type.components == destination.type.components);
+
+        // Temporary solution for Oreg-space, sometimes instructions will be generated that move itself to itself.
+        // This is meant to discard some of these instructions.
+        // TODO: Allow Oreg-space to reuse space from inst. params. if possible is better.
+        if (source.index == destination.index
+            && source.bank == destination.bank
+            && source.type.components == destination.type.components)
+            return;
+
+        if (destination.type.components <= 2) {
+            // We might want to use a mov instruction over a pack for a couple of reasons when possible.
+            // Right now pck is weird on vita3k so I am using mov to get around it.
+            createMov(source, destination);
+        } else {
+            // Needs to use pack to move > 2 components in one instruction.
+            // NO I DONT, packing seems broken on hardware so lets do 2 movs
+//            createPack(source, destination);
+            createMov(source.getComponents(0, 2),
+                destination.getComponents(0, 2));
+            createMov(source.getComponents(2, destination.type.components - 2),
+                destination.getComponents(2, destination.type.components - 2));
+        }
     }
 
     void Block::createMov(
@@ -30,7 +53,7 @@ namespace gxp {
         printDisassembly("mov", { source }, &destination);
         instructions.push_back(usse::makeVMOV(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             0, // test_bit_2
             0, // src0_comp_sel
             0, // syncstart
@@ -43,7 +66,7 @@ namespace gxp {
             0, // nosched
             static_cast<usse::Param>(destination.type.type) & 0b111u, // move_data_type
             0, // test_bit_1
-            source.getSwizzleIndex(), // src0_swiz
+            source.getSwizzleIndex(false, 4), // src0_swiz
             0, // src0_bank_sel
             destBankLayout.number, // dest_bank_sel
             srcBankLayout.number, // src1_bank_sel
@@ -84,7 +107,7 @@ namespace gxp {
         printDisassembly("pck", { source }, &destination);
         instructions.push_back(usse::makeVPCK(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             0, // nosched
             0, // unknown
             0, // syncstart
@@ -124,7 +147,7 @@ namespace gxp {
         printDisassembly("dot", { first, second }, &destination);
         instructions.push_back(usse::makeVDP(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             0, // clip_plane_enable
             first.type.components == 4, // opcode2
             destBankLayout.extension, // dest_use_bank_ext
@@ -176,7 +199,7 @@ namespace gxp {
         printDisassembly("add", { first, second }, &destination);
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext
@@ -226,7 +249,7 @@ namespace gxp {
         printDisassembly("sub", { first, second }, &destination);
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             (secondSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext
@@ -275,7 +298,7 @@ namespace gxp {
         printDisassembly("mul", { first, second }, &destination);
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext
@@ -321,7 +344,7 @@ namespace gxp {
         printDisassembly("exp", { source }, &destination);
         instructions.push_back(usse::makeVCOMP(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             typeTable[static_cast<uint32_t>(destination.type.type)], // dest_type
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext
@@ -363,7 +386,7 @@ namespace gxp {
         printDisassembly("log", { source }, &destination);
         instructions.push_back(usse::makeVCOMP(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             typeTable[static_cast<uint32_t>(destination.type.type)], // dest_type
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext
@@ -405,7 +428,7 @@ namespace gxp {
         printDisassembly("rsq", { source }, &destination);
         instructions.push_back(usse::makeVCOMP(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             typeTable[static_cast<uint32_t>(destination.type.type)], // dest_type
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext
@@ -450,7 +473,7 @@ namespace gxp {
         printDisassembly("min", { first, second }, &destination);
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext
@@ -499,7 +522,7 @@ namespace gxp {
         printDisassembly("max", { first, second }, &destination);
         instructions.push_back(usse::makeVNMAD32(
             0, // pred
-            0, // skipinv
+            true, // skipinv
             (firstSwizzle >> 10u) & 0b11u, // src1_swiz_10_11
             0, // syncstart
             destBankLayout.extension, // dest_bank_ext

@@ -119,6 +119,7 @@ namespace usse {
         RegisterReference getElement(uint32_t element);
         RegisterReference getExpanded(uint32_t count);
         RegisterReference getAligned(uint8_t writeMask);
+        RegisterReference getWithSwizzle(usse::SwizzleVec4 newSwizzle);
 
         RegisterReference() = default;
         RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex);

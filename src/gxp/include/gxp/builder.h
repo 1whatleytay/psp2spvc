@@ -49,7 +49,7 @@ namespace gxp {
         uint32_t oRegPointer = 0;
         uint32_t iRegPointer = 0;
 
-        std::array<bool, maxTemporaryRegisters> tRegSpace;
+        std::array<bool, maxTemporaryRegisters> tRegSpace = { };
         uint32_t tMaxRegs = 0;
 
         std::vector<std::unique_ptr<Block>> primaryBlocks;

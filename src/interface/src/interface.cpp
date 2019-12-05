@@ -10,8 +10,8 @@
 bool Interface::parseParams(int count, char **args) {
     for (int a = 1; a < count; a++) {
         if (strcmp(args[a], "-o") == 0) {
-            ERROR_RETURN_IF(a + 1 >= count, "Error, no output specified.")
-            ERROR_RETURN_IF(!outputFilePath.empty(), "Multiple output files specified.")
+            ERROR_RETURN_IF(a + 1 >= count, "Error, no output specified.\n")
+            ERROR_RETURN_IF(!outputFilePath.empty(), "Multiple output files specified.\n")
             outputFilePath = args[a + 1];
             a++;
         } else if (strcmp(args[a], "-S") == 0) { // Print Disassembly
@@ -23,13 +23,13 @@ bool Interface::parseParams(int count, char **args) {
         } else if (strcmp(args[a], "-Oreg-space") == 0) { // Optimize Register Space
             config.optimizeRegisterSpace = true;
         } else {
-            ERROR_RETURN_IF(!inputFilePath.empty(), "Multiple input files specified.")
+            ERROR_RETURN_IF(!inputFilePath.empty(), "Multiple input files specified.\n")
             inputFilePath = args[a];
         }
     }
 
-    ERROR_RETURN_IF(inputFilePath.empty(), "You must specify an input.")
-    ERROR_RETURN_IF(outputFilePath.empty(), "You must specify an output.")
+    ERROR_RETURN_IF(inputFilePath.empty(), "You must specify an input.\n")
+    ERROR_RETURN_IF(outputFilePath.empty(), "You must specify an output.\n")
 
     return true;
 }

@@ -83,10 +83,10 @@ class CompilerGXP : public Compiler {
         const std::string &name);
 
     spv::Id resolveAlias(spv::Id id);
-    void useRegister(spv::Id id);
-    usse::RegisterReference getRegister(spv::Id id);
-    void writeRegister(spv::Id id, TranslatorReference reg);
-    void aliasRegister(spv::Id empty, spv::Id value);
+    void useReference(spv::Id id);
+    usse::RegisterReference getReference(spv::Id id);
+    void writeReference(spv::Id id, TranslatorReference reg);
+    void aliasReference(spv::Id empty, spv::Id value);
     void cleanupRegisters();
 
     spv::Id createBlock(const SPIRBlock &block);

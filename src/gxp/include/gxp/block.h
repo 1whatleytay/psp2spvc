@@ -20,7 +20,10 @@ namespace gxp {
     public:
         Builder &parent;
 
-        void createNop();
+        void moveData(
+            usse::RegisterReference source,
+            usse::RegisterReference destination);
+
         void createMov(
             usse::RegisterReference source,
             usse::RegisterReference destination);

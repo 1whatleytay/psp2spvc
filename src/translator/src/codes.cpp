@@ -1,6 +1,7 @@
 #include <translator/translator.h>
 
 #include <gxp/block.h>
+#include <gxp/disasm.h>
 
 #include <util/util.h>
 
@@ -13,7 +14,7 @@ spv::Id CompilerGXP::resolveAlias(spv::Id id) {
     return id;
 }
 
-void CompilerGXP::useRegister(spv::Id id) {
+void CompilerGXP::useReference(spv::Id id) {
     if (!config.optimizeRegisterSpace)
         return;
 
@@ -25,7 +26,7 @@ void CompilerGXP::useRegister(spv::Id id) {
     idUsesLeft[id]--;
 }
 
-usse::RegisterReference CompilerGXP::getRegister(spv::Id id) {
+usse::RegisterReference CompilerGXP::getReference(spv::Id id) {
     id = resolveAlias(id);
 
     auto varying = idVaryings.find(id);
@@ -34,7 +35,7 @@ usse::RegisterReference CompilerGXP::getRegister(spv::Id id) {
 
     auto reg = idRegisters.find(resolveAlias(id));
     if (reg != idRegisters.end()) {
-        useRegister(id);
+        useReference(id);
         return reg->second.reference;
     }
 
@@ -48,8 +49,12 @@ usse::RegisterReference CompilerGXP::getRegister(spv::Id id) {
         if (type.vecsize == 1) {
             int32_t regIndex = usse::getFPConstantIndex(constant->m.c[0].r[0].f32);
             if (regIndex != -1) {
-                return usse::RegisterReference({usse::Type::Float32, 1, 1}, usse::RegisterBank::FloatConstant,
-                                               regIndex);
+                usse::RegisterReference floatReference(
+                    {usse::Type::Float32, 1, 1}, usse::RegisterBank::FloatConstant, 0);
+                floatReference.index = regIndex / 2;
+                // x or y bank
+                floatReference.swizzle = usse::getSwizzleVec4All(static_cast<usse::SwizzleChannel>(regIndex % 2));
+                return floatReference;
             }
         }
 
@@ -58,23 +63,24 @@ usse::RegisterReference CompilerGXP::getRegister(spv::Id id) {
             literal[a] = constant->m.c[0].r[a].f32;
 
         usse::RegisterReference literalReg = builder.registerLiteral(literal);
-        writeRegister(id, { literalReg });
+//        writeReference(id, {literalReg});
+//        idUsesLeft[id] = ~0u;
         return literalReg;
     }
 
     throw std::runtime_error(fmt::format("Cannot find register, varying or constant with id {}.", id));
 }
 
-void CompilerGXP::writeRegister(spv::Id id, TranslatorReference reg) {
+void CompilerGXP::writeReference(spv::Id id, TranslatorReference reg) {
     if (idRegisters.find(id) == idRegisters.end()) {
         idRegisters[id] = std::move(reg);
-        useRegister(id);
+        useReference(id);
     } else {
         throw std::runtime_error(fmt::format("SSA Violation, id {} was assigned twice.", id));
     }
 }
 
-void CompilerGXP::aliasRegister(spv::Id empty, spv::Id value) {
+void CompilerGXP::aliasReference(spv::Id empty, spv::Id value) {
     // Resolve aliases (so you can make aliases of aliases).
     empty = resolveAlias(empty);
     value = resolveAlias(value);
@@ -115,16 +121,16 @@ void CompilerGXP::opLoad(const TranslatorArguments &arguments) {
     spv::Id result = arguments.instruction[1];
     spv::Id pointer = arguments.instruction[2];
 
-    usse::RegisterReference reg = getRegister(pointer);
+    usse::RegisterReference reg = getReference(pointer);
 
     if (config.optimizeRegisterSpace && idUsesLeft[pointer] == 0) {
         // If result allocation is going to be freed right after, just alias.
-        aliasRegister(result, pointer);
+        aliasReference(result, pointer);
     } else {
         // If not, allocate more space.
         usse::RegisterReference destination = builder.allocateRegister(usse::RegisterBank::Temporary, reg.type);
-        arguments.block.createPack(reg, destination);
-        writeRegister(result, { destination });
+        arguments.block.moveData(reg, destination);
+        writeReference(result, {destination});
     }
 }
 
@@ -132,23 +138,19 @@ void CompilerGXP::opStore(const TranslatorArguments &arguments) {
     spv::Id destination = arguments.instruction[0];
     spv::Id source = arguments.instruction[1];
 
-    usse::RegisterReference sourceRegister = getRegister(source);
-    usse::RegisterReference destinationRegister = getRegister(destination);
+    usse::RegisterReference sourceRegister = getReference(source);
+    usse::RegisterReference destinationRegister = getReference(destination);
 
-    if (sourceRegister.type.components == 1)
-        arguments.block.createMov(sourceRegister, destinationRegister);
-    else
-        arguments.block.createPack(sourceRegister, destinationRegister);
+    arguments.block.moveData(sourceRegister, destinationRegister);
 }
 
 void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id matrix = arguments.instruction[2];
     spv::Id vector = arguments.instruction[3];
 
-    usse::RegisterReference matrixRegister = getRegister(matrix);
-    usse::RegisterReference vectorRegister = getRegister(vector);
+    usse::RegisterReference matrixRegister = getReference(matrix);
+    usse::RegisterReference vectorRegister = getReference(vector);
 
     assert(matrixRegister.type.type == vectorRegister.type.type);
     assert(matrixRegister.type.arraySize == vectorRegister.type.components);
@@ -159,24 +161,23 @@ void CompilerGXP::opMatrixTimesVector(const TranslatorArguments &arguments) {
     usse::RegisterReference temp = builder.allocateRegister(
         usse::RegisterBank::Temporary, vectorRegister.type);
 
-    arguments.block.createPack(vectorRegister, internal);
+    arguments.block.moveData(vectorRegister, internal);
 
     for (uint32_t a = 0; a < vectorRegister.type.components; a++) {
         arguments.block.createDot(matrixRegister.getElement(a), internal, temp.getComponents(a, 1));
     }
 
     builder.freeRegister(internal);
-    writeRegister(result, { temp });
+    writeReference(result, {temp});
 }
 
 void CompilerGXP::opVectorTimesScalar(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id vectorId = arguments.instruction[2];
     spv::Id scalarId = arguments.instruction[3];
 
-    usse::RegisterReference vector = getRegister(vectorId);
-    usse::RegisterReference scalar = getRegister(scalarId);
+    usse::RegisterReference vector = getReference(vectorId);
+    usse::RegisterReference scalar = getReference(scalarId);
     usse::RegisterReference destination = builder.allocateRegister(usse::RegisterBank::Temporary, vector.type);
 
     scalar.swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::X);
@@ -185,18 +186,17 @@ void CompilerGXP::opVectorTimesScalar(const TranslatorArguments &arguments) {
 
     arguments.block.createMul(vector, scalar, destination);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::opCompositeExtract(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id sourceId = arguments.instruction[2];
     uint32_t index = arguments.instruction[3];
 
-    usse::RegisterReference source = getRegister(sourceId);
+    usse::RegisterReference source = getReference(sourceId);
 
-    writeRegister(result, { source.getComponents(index, 1) });
+    writeReference(result, {source.getComponents(index, 1)});
 }
 
 void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
@@ -210,11 +210,11 @@ void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
 
     for (size_t a = 0; a < type.vecsize;) {
         spv::Id sourceId = arguments.instruction[2 + a];
-        usse::RegisterReference source = getRegister(sourceId);
+        usse::RegisterReference source = getReference(sourceId);
 
         uint32_t size = 1;
         while (a + size < type.vecsize) {
-            usse::RegisterReference next = getRegister(arguments.instruction[2 + a + size]);
+            usse::RegisterReference next = getReference(arguments.instruction[2 + a + size]);
             bool matchingBanks = source.bank == next.bank;
             bool matchingIndices = (source.index + static_cast<uint32_t>(source.swizzle[0]) + size) ==
                 (next.index + static_cast<uint32_t>(next.swizzle[0]));
@@ -225,21 +225,16 @@ void CompilerGXP::opCompositeConstruct(const TranslatorArguments &arguments) {
             }
         }
 
-        if (size == 1)
-            arguments.block.createMov(usse::RegisterReference(
-                { source.type.type, size, 1 }, source.bank, source.index), output.getComponents(a, size));
-        else
-            arguments.block.createPack(usse::RegisterReference(
-                { source.type.type, size, 1 }, source.bank, source.index), output.getComponents(a, size));
+        source.type.components = size;
+        arguments.block.moveData(source.getComponents(0, size), output.getComponents(a, size));
 
         a += size;
     }
 
-    writeRegister(result, { output });
+    writeReference(result, {output});
 }
 
 void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id base = arguments.instruction[2];
 
@@ -251,7 +246,7 @@ void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
     SPIRType type = get_type_from_variable(base);
 
     if (type.basetype == SPIRType::Struct && is_member_builtin(type, builtInValue, &builtIn)) {
-        writeRegister(result, { getOrThrow(varyingReferences, translateVarying(builtIn)) });
+        writeReference(result, {getOrThrow(varyingReferences, translateVarying(builtIn))});
         return;
     } else {
         ref = getOrThrow(idRegisters, base);
@@ -274,7 +269,7 @@ void CompilerGXP::opAccessChain(const TranslatorArguments &arguments) {
         }
     }
 
-    writeRegister(result, ref);
+    writeReference(result, ref);
 }
 
 
@@ -286,13 +281,13 @@ void CompilerGXP::opVectorShuffle(const TranslatorArguments &arguments) {
 
     SPIRType type = get_type(typeId);
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
 
     usse::RegisterReference temp = builder.allocateRegister(
         usse::RegisterBank::Temporary, translateType(type));
 
-    for (uint32_t a = 0; a < type.vecsize; a++) {
+    for (uint32_t a = 0; a < type.vecsize;) {
         uint32_t index = arguments.instruction[4 + a];
 
         usse::RegisterReference source;
@@ -302,18 +297,39 @@ void CompilerGXP::opVectorShuffle(const TranslatorArguments &arguments) {
         else
             source = second.getComponents(index - first.type.components, 1);
 
-        arguments.block.createMov(source, temp.getComponents(a, 1));
+        uint32_t size = 1;
+        while (a + size < type.vecsize) {
+            uint32_t nextIndex = arguments.instruction[4 + a + size];
+            usse::RegisterReference next;
+            if (index < first.type.components)
+                next = first.getComponents(nextIndex, 1);
+            else
+                next = second.getComponents(nextIndex - first.type.components, 1);
+            bool matchingBanks = source.bank == next.bank;
+            bool matchingIndices = (source.index + static_cast<uint32_t>(source.swizzle[0]) + size) ==
+                (next.index + static_cast<uint32_t>(next.swizzle[0]));
+            if (matchingBanks && matchingIndices) {
+                size++;
+            } else {
+                break;
+            }
+        }
+
+        arguments.block.moveData(
+            usse::RegisterReference({ source.type.type, size, 1 }, source.bank, source.index),
+            temp.getComponents(a, size));
+
+        a += size;
     }
 
-    writeRegister(result, { temp });
+    writeReference(result, {temp});
 }
 
 void CompilerGXP::opFNegate(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id sourceId = arguments.instruction[2];
 
-    usse::RegisterReference source = getRegister(sourceId);
+    usse::RegisterReference source = getReference(sourceId);
     usse::RegisterReference destination = builder.allocateRegister(usse::RegisterBank::Temporary, source.type);
 
     int32_t zeroFP = usse::getFPConstantIndex(0);
@@ -321,62 +337,58 @@ void CompilerGXP::opFNegate(const TranslatorArguments &arguments) {
 
     arguments.block.createSub(zero, source, destination);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::opFAdd(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id firstId = arguments.instruction[2];
     spv::Id secondId = arguments.instruction[3];
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
 
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, first.type);
 
     arguments.block.createAdd(first, second, destination);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::opFSub(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id firstId = arguments.instruction[2];
     spv::Id secondId = arguments.instruction[3];
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
 
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, first.type);
 
     arguments.block.createSub(first, second, destination);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::opFMul(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id firstId = arguments.instruction[2];
     spv::Id secondId = arguments.instruction[3];
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
 
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, first.type);
 
     arguments.block.createMul(first, second, destination);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::opDot(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id firstId = arguments.instruction[2];
     spv::Id secondId = arguments.instruction[3];
@@ -384,42 +396,47 @@ void CompilerGXP::opDot(const TranslatorArguments &arguments) {
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, { usse::Type::Float32, 1, 1 });
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
 
     usse::RegisterReference internal = builder.allocateRegister(
         usse::RegisterBank::Internal, second.type);
 
-    arguments.block.createPack(second, internal);
+    arguments.block.moveData(second, internal);
     arguments.block.createDot(first, internal, destination);
 
     builder.freeRegister(internal);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::opFunctionCall(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id functionId = arguments.instruction[2];
 
     SPIRFunction function = get<SPIRFunction>(functionId);
+
+    fmt::print("Calling {}(", get_name(functionId));
 
     for (size_t a = 0; a < function.arguments.size(); a++) {
         // Should be alias here, not writeRegister.
         spv::Id moveToId = function.arguments[a].id;
         spv::Id moveFromId = arguments.instruction[3 + a];
 
+        fmt::print("{}{}", a != 0 ? ", " : "", usse::disasm::disassembleReference(idRegisters[moveFromId].reference));
+
         // Function use counts have not been created yet (until createFunction). Allow this assignment.
         if (config.optimizeRegisterSpace)
             idUsesLeft[moveToId]++;
 
-        aliasRegister(moveToId, moveFromId);
+        aliasReference(moveToId, moveFromId);
     }
+
+    fmt::print(")...\n");
 
     spv::Id returnValue = createFunction(function);
     if (returnValue != 0)
-        aliasRegister(result, returnValue);
+        aliasReference(result, returnValue);
 }
 
 void CompilerGXP::opExtInst(const TranslatorArguments &arguments) {
@@ -432,11 +449,10 @@ void CompilerGXP::opExtInst(const TranslatorArguments &arguments) {
 }
 
 void CompilerGXP::extGLSLNormalize(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id sourceId = arguments.instruction[4];
 
-    usse::RegisterReference source = getRegister(sourceId);
+    usse::RegisterReference source = getReference(sourceId);
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, source.type);
 
@@ -445,7 +461,7 @@ void CompilerGXP::extGLSLNormalize(const TranslatorArguments &arguments) {
     usse::RegisterReference magnitude = builder.allocateRegister(
         usse::RegisterBank::Internal, { source.type.type, 1, 1 });
 
-    arguments.block.createPack(source, temporary);
+    arguments.block.moveData(source, temporary);
     arguments.block.createDot(temporary, temporary, magnitude);
     arguments.block.createReverseSquareRoot(magnitude, magnitude);
 
@@ -454,39 +470,37 @@ void CompilerGXP::extGLSLNormalize(const TranslatorArguments &arguments) {
     builder.freeRegister(magnitude);
     builder.freeRegister(temporary);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::extGLSLFMin(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id firstId = arguments.instruction[4];
     spv::Id secondId = arguments.instruction[5];
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, first.type);
 
     arguments.block.createMin(first, second, destination);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::extGLSLFMax(const TranslatorArguments &arguments) {
-    spv::Id typeId = arguments.instruction[0];
     spv::Id result = arguments.instruction[1];
     spv::Id firstId = arguments.instruction[4];
     spv::Id secondId = arguments.instruction[5];
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, first.type);
 
     arguments.block.createMax(first, second, destination);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
@@ -494,8 +508,8 @@ void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
     spv::Id firstId = arguments.instruction[4];
     spv::Id secondId = arguments.instruction[5];
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
 
     usse::RegisterReference internal = builder.allocateRegister(
         usse::RegisterBank::Internal, second.type);
@@ -508,7 +522,7 @@ void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
     usse::RegisterReference two = usse::RegisterReference({ usse::Type::Float32, 1, 1 },
         usse::RegisterBank::FloatConstant, usse::getFPConstantIndex(2)).getExpanded(1);
 
-    arguments.block.createPack(second, internal);
+    arguments.block.moveData(second, internal);
     arguments.block.createDot(first, internal, magnitude);
     arguments.block.createMul(two, magnitude, magnitude);
     arguments.block.createMul(magnitude, first, destination);
@@ -517,7 +531,7 @@ void CompilerGXP::extGLSLReflect(const TranslatorArguments &arguments) {
     builder.freeRegister(magnitude);
     builder.freeRegister(internal);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 void CompilerGXP::extGLSLPow(const TranslatorArguments &arguments) {
@@ -525,8 +539,8 @@ void CompilerGXP::extGLSLPow(const TranslatorArguments &arguments) {
     spv::Id firstId = arguments.instruction[4];
     spv::Id secondId = arguments.instruction[5];
 
-    usse::RegisterReference first = getRegister(firstId);
-    usse::RegisterReference second = getRegister(secondId);
+    usse::RegisterReference first = getReference(firstId);
+    usse::RegisterReference second = getReference(secondId);
 
     usse::RegisterReference destination = builder.allocateRegister(
         usse::RegisterBank::Temporary, { usse::Type::Float32, 1, 1 });
@@ -538,7 +552,7 @@ void CompilerGXP::extGLSLPow(const TranslatorArguments &arguments) {
     arguments.block.createMul(destination, second, destination);
     arguments.block.createExp(destination, destination);
 
-    writeRegister(result, { destination });
+    writeReference(result, {destination});
 }
 
 TranslatorArguments::TranslatorArguments(

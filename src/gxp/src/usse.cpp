@@ -7,70 +7,70 @@
 
 namespace usse {
     float fpConstants[] = {
-        0.0f,
-        0.0f,
-        1.0f,
-        1.0f,
-        2.0f,
-        8.0f,
-        32.0f,
-        128.0f,
-        512.0f,
-        2048.0f,
-        8192.0f,
-        32768.0f,
-        0.5f,
-        0.125f,
-        0.03125f,
-        0.0078125f,
-        0.001953125f,
-        0.00048828125f,
-        0.0001220703125f,
-        3.0517578125e-05f,
-        2.7182817459106445f,
-        1.4142135381698608f,
-        3.1415927410125732f,
-        0.7853981852531433f,
-        6.2831854820251465f,
-        25.132741928100586f,
-        1.52587890625e-05f,
-        1.5259021893143654e-05f,
-        1.5500992276429315e-06f,
-        0.0002604166802484542f,
-        0.02083333395421505f,
-        0.5f,
-        0.0f,
-        0.0f,
-        0.007826805114746094f,
-        513.0f,
-        2.204391964672e+12f,
-        9.472403081849855e+21f,
-        4.07034684917033e+31f,
-        1.1941301636397839e-07f,
-        2.7789456933519086e-17f,
-        6.467081701001855e-27f,
-        1.50500011103716e-36f,
-        1.68573558312346e-06f,
-        0.0003208939451724291f,
-        0.1955653429031372f,
-        3281298.0f,
-        0.0f,
-        0.0f,
-        4.661918073800564e-10f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        -NAN,
-        -NAN,
-        -NAN,
-        -NAN,
-        NAN,
-        NAN,
-        NAN,
-        NAN,
+        0.0f, 0.0,
+        0.0f, 1.0,
+        1.0f, 0.0,
+        1.0f, 1.0,
+        2.0f, 4.0,
+        8.0f, 16.0,
+        32.0f, 64.0,
+        128.0f, 256.0,
+        512.0f, 1024.0,
+        2048.0f, 4096.0,
+        8192.0f, 16384.0,
+        32768.0f, 65536.0,
+        0.5f, 0.25,
+        0.125f, 0.0625,
+        0.03125f, 0.015625,
+        0.0078125f, 0.00390625,
+        0.001953125f, 0.0009765625,
+        0.00048828125f, 0.000244140625,
+        0.0001220703125f, 6.103515625e-05,
+        3.0517578125e-05f, 1.52587890625e-05,
+        2.7182817459106445f, 0.3678794503211975,
+        1.4142135381698608f, 0.7071067690849304,
+        3.1415927410125732f, 1.5707963705062866,
+        0.7853981852531433f, 0.39269909262657166,
+        6.2831854820251465f, 12.566370964050293,
+        25.132741928100586f, 0.0,
+        1.52587890625e-05f, 3.0517578125e-05,
+        1.5259021893143654e-05f, 3.0518509447574615e-05,
+        1.5500992276429315e-06f, 2.1701389414374717e-05,
+        0.0002604166802484542f, 0.0026041667442768812,
+        0.02083333395421505f, 0.125,
+        0.5f, 1.0,
+        0.0f, 0.0078125,
+        0.0f, 0.0,
+        0.007826805114746094f, 0.007826805114746094,
+        513.0f, 33628160.0,
+        2.204391964672e+12f, 1.4450221616883302e+17,
+        9.472403081849855e+21f, 6.209345240995639e+26,
+        4.07034684917033e+31f, 4.304788882405838e-41,
+        1.1941301636397839e-07f, 1.821653938804957e-12,
+        2.7789456933519086e-17f, 4.239300639334267e-22,
+        6.467081701001855e-27f, 9.865576140123616e-32,
+        1.50500011103716e-36f, 0.0,
+        1.68573558312346e-06f, 0.0,
+        0.0003208939451724291f, 0.0,
+        0.1955653429031372f, 2.9836246540071443e-06,
+        3281298.0f, 2.8082021225069334e-41,
+        0.0f, 0.0,
+        0.0f, 1.1014318927854575e-23,
+        4.661918073800564e-10f, 0.007825851440429687,
+        0.0f, 0.0,
+        0.0f, 0.0,
+        0.0f, 0.0,
+        0.0f, 0.0,
+        0.0f, 0.0,
+        0.0f, 0.0,
+        -NAN, 0.0,
+        -NAN, 0.0,
+        -NAN, 0.0,
+        -NAN, 0.0,
+        NAN, 0.0,
+        NAN, 0.0,
+        NAN, 0.0,
+        NAN, 0.0,
     };
 
     const uint32_t swizzleStandardSize = 16;
@@ -167,7 +167,7 @@ namespace usse {
 
         if (bank == RegisterBank::Internal)
             index += (60 + (doubleReg ? 0 : 2)) * (bits == 7 ? 2 : 1);
-        else if (doubleReg)
+        else if (bank != RegisterBank::FloatConstant && doubleReg)
             index /= 2;
 
         return index;
@@ -268,7 +268,8 @@ namespace usse {
     }
 
     RegisterReference RegisterReference::getHalf(uint32_t half) {
-        uint32_t width = (type.components - 1) / 2 + 1;
+//        uint32_t width = (type.components - 1) / 2 + 1;
+        uint32_t width = 2;
 
         return getComponents(width * half, width);
     }
@@ -301,7 +302,8 @@ namespace usse {
         if (element >= type.arraySize)
             throw std::runtime_error("Register reference array out of bounds.");
 
-        return RegisterReference({ type.type, type.components, 1 }, bank, index + size / type.arraySize * element);
+        // Array element padding is always 4 (at least for matrices I think)
+        return RegisterReference({ type.type, type.components, 1 }, bank, index + 4 * element);
     }
 
     RegisterReference RegisterReference::getExpanded(uint32_t count) {
@@ -329,13 +331,23 @@ namespace usse {
         return reg;
     }
 
+    RegisterReference RegisterReference::getWithSwizzle(usse::SwizzleVec4 newSwizzle) {
+        RegisterReference reg = *this;
+
+        reg.swizzle = newSwizzle;
+
+        return reg;
+    }
+
     RegisterReference::RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex)
         : type(type), bank(bank), size(getTypeSize(type.type) * type.components * type.arraySize / 4) {
         bool swizzleUp = false;
 
-        if (bank != usse::RegisterBank::Internal && regIndex % 2 == 1) {
-            regIndex--;
+        if (bank == RegisterBank::FloatConstant) {
+            lockSwizzle = true;
+        } else if (bank != RegisterBank::Internal && regIndex % 2 == 1) {
             swizzleUp = true;
+            regIndex--;
         }
 
         for (uint32_t a = 0; a < type.components; a++) {
