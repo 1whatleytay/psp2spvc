@@ -5,14 +5,33 @@
 
 #include <fmt/printf.h>
 
-#define ERROR_RETURN_IF(cond, text) if (cond) { fmt::print(text); return false; }
+void Interface::printHelp() {
+    std::string helpMessage = R"(Usage: psp2spvc [options] path/to/input.spv -o path/to/output.gxp
+
+Options:
+    -h, --help        Shows help message.
+    -S                Print shader assembly to console.
+    -A                Print register allocation messages to console.
+    -L                Print other debug messages to console.
+    -Oreg-space       Enable register space optimization. Required for larger shaders.
+)";
+
+    fmt::print(helpMessage);
+}
 
 bool Interface::parseParams(int count, char **args) {
     for (int a = 1; a < count; a++) {
         if (strcmp(args[a], "-o") == 0) {
-            ERROR_RETURN_IF(a + 1 >= count, "Error, no output specified.\n")
-            ERROR_RETURN_IF(!outputFilePath.empty(), "Multiple output files specified.\n")
-            outputFilePath = args[a + 1];
+            if (a + 1 >= count) {
+                fmt::print("-o option is missing an output path.\n");
+                break;
+            }
+
+            if (!outputFilePath.empty())
+                fmt::print("An output path has already been specified, ignoring \"{}\".\n", args[a + 1]);
+            else
+                outputFilePath = args[a + 1];
+
             a++;
         } else if (strcmp(args[a], "-S") == 0) { // Print Disassembly
             config.printDisassembly = true;
@@ -20,21 +39,30 @@ bool Interface::parseParams(int count, char **args) {
             config.printAllocations = true;
         } else if (strcmp(args[a], "-L") == 0) { // Print Optimization Debug Messages
             config.logDebug = true;
+        } else if (strcmp(args[a], "-h") == 0 || strcmp(args[a], "--help") == 0) {
+            help = true;
         } else if (strcmp(args[a], "-Oreg-space") == 0) { // Optimize Register Space
             config.optimizeRegisterSpace = true;
         } else {
-            ERROR_RETURN_IF(!inputFilePath.empty(), "Multiple input files specified.\n")
-            inputFilePath = args[a];
+            if (!inputFilePath.empty())
+                fmt::print("Unknown argument {}. Ignoring.", args[a]);
+            else
+                inputFilePath = args[a];
         }
     }
 
-    ERROR_RETURN_IF(inputFilePath.empty(), "You must specify an input.\n")
-    ERROR_RETURN_IF(outputFilePath.empty(), "You must specify an output.\n")
+    if (!help) {
+        if (inputFilePath.empty())
+            fmt::print("You must specify an input.\n");
+        else if (outputFilePath.empty())
+            fmt::print("You must specify an output path.\n");
+        else
+            return true;
+    }
 
-    return true;
+    printHelp();
+    return false;
 }
-
-#undef ERROR_RETURN_IF
 
 int Interface::exec(int count, char **args) {
     if (!parseParams(count, args)) return 1;
