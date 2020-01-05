@@ -30,7 +30,6 @@ namespace gxp {
     };
 
     ParameterType getParameterTypeFromUSSEType(usse::Type type);
-    uint32_t getParameterTypeSize(ParameterType type);
 
     enum class ParameterSemantic : uint16_t {
         None,
@@ -59,10 +58,11 @@ namespace gxp {
         Clip5 = 0x0020,
         Clip6 = 0x0040,
         Clip7 = 0x0080,
-        PointSize = 0x100,
+        PointSize = 0x0100,
         Fog = 0x0200,
         Color1 = 0x0400,
         Color0 = 0x0800,
+        Position = 0x1000,
     };
 
     enum class ProgramTexCoordVertexMasks : uint32_t {
@@ -128,6 +128,29 @@ namespace gxp {
     uint32_t getVertexVaryingBits(ProgramVarying varying);
     uint32_t getFragmentVaryingBits(ProgramVarying varying);
 
+    enum class ContainerIndex : uint16_t {
+        Buffer0,
+        Buffer1,
+        Buffer2,
+        Buffer3,
+        Buffer4,
+        Buffer5,
+        Buffer6,
+        Buffer7,
+        Buffer8,
+        Buffer9,
+        Buffer10,
+        Buffer11,
+        Buffer12,
+        Buffer13,
+        Default,
+        Texture,
+        Literal,
+        Scratch,
+        Thread,
+        Data,
+    };
+
     class ProgramVectorInfo {
     public:
         ProgramVarying varying;
@@ -162,13 +185,13 @@ namespace gxp {
     class ProgramVaryings {
     public:
         std::uint8_t unk0[10] = { };
-        std::uint8_t output_param_type = 0;
-        std::uint8_t output_comp_count = 0;
+        std::uint8_t outputParamType = 0;
+        std::uint8_t outputCompCount = 0;
 
-        std::uint16_t varyings_count = 0;
+        std::uint16_t varyingsCount = 0;
         std::uint16_t pad0 = 0;
-        std::uint32_t vertex_outputs1 = 0;
-        std::uint32_t vertex_outputs2 = 0;
+        std::uint32_t vertexOutputs1 = 0;
+        std::uint32_t vertexOutputs2 = 0;
     };
 
     // Vita3K's SceGxmProgram structure
@@ -236,8 +259,10 @@ namespace gxp {
         uint32_t unk8C = 0;
         uint32_t containerCount = 0;
         uint32_t containerOffset = 0;
+
+        uint32_t padding = 0;
     };
 
     uint16_t createParameterConfig(ParameterCategory category, ParameterType type,
-        uint32_t components, uint32_t containerIndex);
+        uint32_t components, ContainerIndex containerIndex);
 }

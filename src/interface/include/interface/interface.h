@@ -1,5 +1,7 @@
 #pragma once
 
+#include <translator/translator.h>
+
 #include <util/spirv.h>
 
 #include <string>
@@ -11,6 +13,11 @@ class Interface {
     std::string inputFilePath;
     std::string outputFilePath;
 
+    bool help = false;
+
+    TranslatorConfig config;
+
+    static void printHelp();
     bool parseParams(int count, char **args);
 
 public:

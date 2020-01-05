@@ -19,25 +19,6 @@ namespace gxp {
         }
     }
 
-    uint32_t getParameterTypeSize(ParameterType type) {
-        switch (type) {
-        case ParameterType::Unsigned32:
-        case ParameterType::Signed32:
-        case ParameterType::Float32:
-            return 4;
-        case ParameterType::Unsigned16:
-        case ParameterType::Signed16:
-        case ParameterType::Float16:
-            return 2;
-        case ParameterType::Unsigned8:
-        case ParameterType::Signed8:
-            return 1;
-        default:
-            throw std::runtime_error(
-                fmt::format("Parameter type {} has no defined size.", static_cast<uint32_t>(type)));
-        }
-    }
-
     std::string getVaryingName(ProgramVarying varying) {
         switch (varying) {
         case ProgramVarying::Position: return "Position";
@@ -82,6 +63,8 @@ namespace gxp {
 
     uint32_t getVertexVaryingBits(ProgramVarying varying) {
         switch (varying) {
+        case ProgramVarying::Position: return static_cast<uint32_t>(ProgramVaryingVertexBits::Position);
+
         case ProgramVarying::Fog: return static_cast<uint32_t>(ProgramVaryingVertexBits::Fog);
         case ProgramVarying::Color0: return static_cast<uint32_t>(ProgramVaryingVertexBits::Color0);
         case ProgramVarying::Color1: return static_cast<uint32_t>(ProgramVaryingVertexBits::Color1);
@@ -141,9 +124,9 @@ namespace gxp {
     }
 
     uint16_t createParameterConfig(ParameterCategory category, ParameterType type,
-        uint32_t components, uint32_t containerIndex) {
+        uint32_t components, ContainerIndex containerIndex) {
         uint16_t config = 0;
-        config |= (containerIndex & 0b1111u) << 12u;
+        config |= (static_cast<uint16_t>(containerIndex) & 0b1111u) << 12u;
         config |= (components & 0b1111u) << 8u;
         config |= (static_cast<uint16_t>(type) & 0b1111u) << 4u;
         config |= static_cast<uint16_t>(category) & 0b1111u;

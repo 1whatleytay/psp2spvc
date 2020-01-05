@@ -1,9 +1,10 @@
 #pragma once
 
-#include <util/spirv.h>
 #include <gxp/builder.h>
 
-#include <unordered_map>
+#include <util/spirv.h>
+
+#include <map>
 
 namespace gxp { class Block; }
 class CompilerGXP;
@@ -19,7 +20,7 @@ public:
 };
 
 class TranslatorArguments {
-    TranslatorArguments(
+    explicit TranslatorArguments(
         gxp::Block &block,
         const TranslatorCode &code,
         const uint32_t *instruction,
@@ -40,15 +41,30 @@ public:
     bool isStruct();
 };
 
+class TranslatorConfig {
+public:
+    bool printDisassembly = false;
+    bool printAllocations = false;
+
+    bool optimizeRegisterSpace = false;
+
+    bool logDebug = false;
+};
+
 class CompilerGXP : public Compiler {
     gxp::Builder builder;
+    TranslatorConfig config;
 
     std::vector<TranslatorCode> codes;
-    std::unordered_map<SPIRExtension::Extension, std::unordered_map<GLSLstd450, TranslatorImplementation>> extensions;
+    std::map<SPIRExtension::Extension, std::unordered_map<GLSLstd450, TranslatorImplementation>> extensions;
 
-    std::unordered_map<spv::Id, gxp::ProgramVarying> idVaryings;
-    std::unordered_map<spv::Id, TranslatorReference> idRegisters;
-    std::unordered_map<gxp::ProgramVarying, usse::RegisterReference> varyingReferences;
+    std::map<spv::Id, gxp::ProgramVarying> idVaryings;
+    std::map<spv::Id, TranslatorReference> idRegisters;
+    std::map<spv::Id, uint32_t> idUseCounts;
+    std::map<spv::Id, uint32_t> idUsesLeft;
+    std::map<spv::Id, spv::Id> idAliases;
+    std::vector<spv::Id> idsCleaned;
+    std::map<gxp::ProgramVarying, usse::RegisterReference> varyingReferences;
 
     static usse::Type translateType(SPIRType::BaseType baseType);
     static usse::DataType translateType(const SPIRType &type);
@@ -60,14 +76,21 @@ class CompilerGXP : public Compiler {
         std::vector<gxp::ProgramVarying> &availableTexCoords,
         uint32_t components);
 
+    void createIdUseCounts(const SPIRFunction &function);
+
     TranslatorReference createVariable(usse::RegisterBank bank, const SPIRType &type);
     TranslatorReference createParameter(gxp::ParameterCategory category, const SPIRType &type,
         const std::string &name);
 
-    usse::RegisterReference getRegister(spv::Id id);
+    spv::Id resolveAlias(spv::Id id);
+    void useReference(spv::Id id);
+    usse::RegisterReference getReference(spv::Id id);
+    void writeReference(spv::Id id, TranslatorReference reg);
+    void aliasReference(spv::Id empty, spv::Id value);
+    void cleanupRegisters();
 
-    void createBlock(const SPIRBlock &block);
-    void createFunction(const SPIRFunction &function);
+    spv::Id createBlock(const SPIRBlock &block);
+    spv::Id createFunction(const SPIRFunction &function);
     void createVertexShaderResources();
     void createFragmentShaderResources();
 
@@ -82,13 +105,14 @@ class CompilerGXP : public Compiler {
     void opStore(const TranslatorArguments &arguments);
     void opMatrixTimesVector(const TranslatorArguments &arguments);
     void opVectorTimesScalar(const TranslatorArguments &arguments);
-    void opConvertUToF(const TranslatorArguments &arguments);
     void opCompositeExtract(const TranslatorArguments &arguments);
     void opCompositeConstruct(const TranslatorArguments &arguments);
     void opAccessChain(const TranslatorArguments &arguments);
     void opVectorShuffle(const TranslatorArguments &arguments);
     void opFNegate(const TranslatorArguments &arguments);
+    void opFAdd(const TranslatorArguments &arguments);
     void opFSub(const TranslatorArguments &arguments);
+    void opFMul(const TranslatorArguments &arguments);
     void opDot(const TranslatorArguments &arguments);
     void opFunctionCall(const TranslatorArguments &arguments);
     void opExtInst(const TranslatorArguments &arguments);
@@ -98,9 +122,10 @@ class CompilerGXP : public Compiler {
     void extGLSLFMin(const TranslatorArguments &arguments);
     void extGLSLFMax(const TranslatorArguments &arguments);
     void extGLSLReflect(const TranslatorArguments &arguments);
+    void extGLSLPow(const TranslatorArguments &arguments);
 public:
 
     std::vector<uint8_t> compileData();
 
-    explicit CompilerGXP(const std::vector<uint32_t> &data);
+    explicit CompilerGXP(const std::vector<uint32_t> &data, TranslatorConfig config);
 };

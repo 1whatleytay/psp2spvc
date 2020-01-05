@@ -6,6 +6,8 @@
 #include <cstdint>
 
 namespace usse {
+    typedef uint64_t Instruction;
+
     enum class RegisterBank {
         Temporary,
         Primary,
@@ -71,52 +73,6 @@ namespace usse {
     typedef std::array<SwizzleChannel, 3> SwizzleVec3;
     typedef std::array<SwizzleChannel, 4> SwizzleVec4;
 
-    class DataType {
-    public:
-        Type type = usse::Type::Float32;
-        uint32_t components = 1;
-        uint32_t arraySize = 1;
-    };
-
-    class RegisterReference {
-    public:
-        DataType type;
-        RegisterBank bank = RegisterBank::Invalid;
-        uint32_t index = 0;
-        uint32_t size = 1;
-        bool lockSwizzle = false;
-        std::vector<SwizzleChannel> swizzle;
-
-        RegisterReference operator+(uint32_t value);
-        uint32_t getSwizzleMask();
-        int32_t getSwizzleIndex(bool extended = false);
-        RegisterReference getHalf(uint32_t half);
-        RegisterReference getComponents(uint32_t component, uint32_t count);
-        RegisterReference getElement(uint32_t element);
-
-        RegisterReference() = default;
-        RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex);
-    };
-
-    class BankLayout {
-    public:
-        usse::RegisterBank bank = usse::RegisterBank::Invalid;
-
-        uint8_t extension = 0;
-        uint8_t number = 0;
-
-        bool isHalf(Type type);
-        uint32_t getIndex(RegisterReference reference, uint32_t bits = 7);
-
-        static BankLayout destLayout(RegisterBank bank);
-        static BankLayout src0Layout(RegisterBank bank);
-        static BankLayout srcLayout(RegisterBank bank);
-    };
-
-    std::string getTypeName(Type type);
-    uint32_t getTypeSize(Type type);
-    std::string getBankName(RegisterBank bank);
-
     bool areSwizzlesInMatchingHalf(SwizzleChannel x, SwizzleChannel y);
     int32_t getFPConstantIndex(float constant);
     int32_t getSwizzleScalarIndex(SwizzleChannel element);
@@ -138,4 +94,53 @@ namespace usse {
     inline SwizzleVec4 getwizzleVec4Default() {
         return { SwizzleChannel::X, SwizzleChannel::Y, SwizzleChannel::Z, SwizzleChannel::W };
     }
+
+    class DataType {
+    public:
+        Type type = usse::Type::Float32;
+        uint32_t components = 1;
+        uint32_t arraySize = 1;
+    };
+
+    class RegisterReference {
+    public:
+        DataType type;
+        RegisterBank bank = RegisterBank::Invalid;
+        uint32_t index = 0;
+        uint32_t size = 1;
+        bool lockSwizzle = false;
+        usse::SwizzleVec4 swizzle = usse::getSwizzleVec4All(usse::SwizzleChannel::DontCare);
+
+        uint32_t getSwizzleMask();
+        int32_t getSwizzleIndex(bool extended = false, int32_t components = -1);
+        uint32_t getEffectiveIndex();
+        RegisterReference getHalf(uint32_t half);
+        RegisterReference getComponents(uint32_t component, uint32_t count);
+        RegisterReference getElement(uint32_t element);
+        RegisterReference getExpanded(uint32_t count);
+        RegisterReference getAligned(uint8_t writeMask);
+        RegisterReference getWithSwizzle(usse::SwizzleVec4 newSwizzle);
+
+        RegisterReference() = default;
+        RegisterReference(DataType type, RegisterBank bank, uint32_t regIndex);
+    };
+
+    class BankLayout {
+    public:
+        usse::RegisterBank bank = usse::RegisterBank::Invalid;
+
+        uint8_t extension = 0;
+        uint8_t number = 0;
+
+        bool isHalfType(Type type);
+        uint32_t getIndex(RegisterReference reference, bool enableDoubleRegs = true, uint32_t bits = 6);
+
+        static BankLayout destLayout(RegisterBank bank);
+        static BankLayout src0Layout(RegisterBank bank);
+        static BankLayout srcLayout(RegisterBank bank);
+    };
+
+    std::string getTypeName(Type type);
+    uint32_t getTypeSize(Type type);
+    std::string getBankName(RegisterBank bank);
 }
