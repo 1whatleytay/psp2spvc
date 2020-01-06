@@ -6,7 +6,7 @@ The goal of the project is to provide an easy, open-source way to generate GXP s
 gxmfun shader compatibility:
  - [x] clear_f
  - [x] clear_v
- - [ ] color_f
+ - [x] color_f
  - [ ] color_v
  - [ ] cube_f
  - [ ] cube_v
@@ -67,3 +67,12 @@ make
 ```
 
 No prebuilt binaries are provided.
+
+## Credits
+**xerpi** for the idea, support and gxmfun for testing
+
+**pent0**, **velocity** for review and suggestions
+
+**waterflame**, **illusionman1212**, **francj** for testing
+
+**Vita3K** project for the GXP structs and GXP/USSE research
