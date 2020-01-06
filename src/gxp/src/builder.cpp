@@ -255,13 +255,16 @@ namespace gxp {
         return references;
     }
 
+    // TODO: drop type/components, fragment output must be half4 afaik
     usse::RegisterReference Builder::createFragmentOutput(usse::Type type, uint32_t components) {
         type = usse::Type::Float16;
 
         varyings.outputCompCount = components;
         varyings.outputParamType = static_cast<uint8_t>(getParameterTypeFromUSSEType(type));
 
-        return allocateRegister(usse::RegisterBank::Primary, { type, components, 1 });
+        return usse::RegisterReference({ type, components, 1 }, usse::RegisterBank::Primary, 0);
+        // allocating doesn't make sense as parameters/iterators will allocate over it
+//        return allocateRegister(usse::RegisterBank::Primary, { type, components, 1 });
     }
 
     std::vector<uint8_t> Builder::build() {

@@ -27,7 +27,10 @@ namespace gxp {
             && source.type.components == destination.type.components)
             return;
 
-        if (destination.type.components <= 2) {
+        if (source.type.type != destination.type.type) {
+            // need to use pack for fragment output (f32 to f16 conversion)
+            createPack(source, destination);
+        } else if (destination.type.components <= 2) {
             // We might want to use a mov instruction over a pack for a couple of reasons when possible.
             // Right now pck is weird on vita3k so I am using mov to get around it.
             createMov(source, destination);
