@@ -10,6 +10,8 @@ gxmfun shader compatibility:
  - [ ] color_v
  - [ ] cube_f
  - [ ] cube_v
+ - [ ] disable_color_buffer_f
+ - [ ] disable_color_buffer_v
 
 The project is still early into its development, shaders can be unstable and many features are not yet implemented.
 If you found a problem or would like to request a feature, feel free to make an [issue](https://github.com/1whatleytay/psp2spvc/issues).
@@ -73,6 +75,6 @@ No prebuilt binaries are provided.
 
 **pent0**, **velocity** for review and suggestions
 
-**waterflame**, **illusionman1212**, **francj** for testing
+**waterflame**, **illusionman1212**, **frangarcj** for testing
 
 **Vita3K** project for the GXP structs and GXP/USSE research
