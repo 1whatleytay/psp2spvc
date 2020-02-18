@@ -18,11 +18,19 @@ namespace gxp {
         usse::RegisterReference source,
         usse::RegisterReference destination) {
         assert(source.type.components == destination.type.components);
+        assert(source.type.arraySize == destination.type.arraySize);
+
+        // handle loading arrays/matrices, call recursively because I am lazy
+        if (source.type.arraySize > 1) {
+            for (uint32_t a = 0; a < source.type.arraySize; a++) {
+                moveData(source.getElement(a), destination.getElement(a));
+            }
+        }
 
         // Temporary solution for Oreg-space, sometimes instructions will be generated that move itself to itself.
         // This is meant to discard some of these instructions.
         // TODO: Allow Oreg-space to reuse space from inst. params. if possible is better.
-        if (source.index == destination.index
+        else if (source.index == destination.index
             && source.bank == destination.bank
             && source.type.components == destination.type.components)
             return;
