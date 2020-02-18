@@ -53,6 +53,8 @@ namespace gxp {
 
         assert(source.type.components <= 2 && destination.type.components <= 2);
 
+        usse::RegisterReference alignedSource = source.getAligned(destination.getSwizzleMask());
+
         printDisassembly("mov", { source }, &destination);
         instructions.push_back(usse::makeVMOV(
             0, // pred
@@ -69,7 +71,7 @@ namespace gxp {
             0, // nosched
             static_cast<usse::Param>(destination.type.type) & 0b111u, // move_data_type
             0, // test_bit_1
-            source.getSwizzleIndex(false, 4), // src0_swiz
+            alignedSource.getSwizzleIndex(false, 4), // src0_swiz
             0, // src0_bank_sel
             destBankLayout.number, // dest_bank_sel
             srcBankLayout.number, // src1_bank_sel
