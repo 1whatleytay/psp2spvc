@@ -124,7 +124,9 @@ namespace gxp {
         }
 
         usse::RegisterReference reg = allocateRegister(parameters[index].getBank(), type);
-        // TODO: Which one is causing the crash!? pa size or param size?
+        // RegisterReference should reflect the # of regs the user requested
+        reg.type.components = parameter.type.components;
+        // TODO: Which one is causing the bug!? pa size or param size?
         parameters[index].type.components = type.components;
         parameters[index].resourceIndex = reg.getEffectiveIndex();
         parameters[index].containerIndex = 0;

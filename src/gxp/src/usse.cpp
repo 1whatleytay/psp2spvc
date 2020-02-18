@@ -277,11 +277,11 @@ namespace usse {
     RegisterReference RegisterReference::getComponents(uint32_t component, uint32_t count) {
         RegisterReference reg = *this;
 
-        int32_t swizzleOffset = 0;
+        int32_t swizzleOffset = static_cast<uint32_t>(swizzle[0]);
 
-        if (component >= 2) {
+        if (bank != RegisterBank::Internal && component >= 2) {
             reg.index += 2;
-            swizzleOffset = -2;
+            swizzleOffset -= 2;
         }
 
         reg.type.components = count;
